@@ -1,0 +1,6 @@
+name,from_zone_id,to_zone_id,voltage_type,electricity
+3A,0,2,ST,ST
+4B,2,1,LZHZ,LZHZ
+6D,2,99,LZG,LZG
+5C,2,3,HH,HH
+7F,4,6,S,S

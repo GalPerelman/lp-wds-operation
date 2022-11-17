@@ -1,0 +1,2 @@
+name,zone,diameter,min_level,max_level,initial_level,final_level,pattern_zone
+Tank 1,1,1.128379167,500,2800,1500,1500,1

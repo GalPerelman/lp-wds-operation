@@ -1,0 +1,6 @@
+name,from_zone_id,to_zone_id,power,voltage_type,min_flow,max_flow,init_flow
+vsp1,0,1,0,v1,0,270,253
+vsp2,0,2,0,v1,0,250,72
+vsp3,0,3,0,v1,0,460,179
+vsp4,0,4,0,v1,66,66,
+vsp5,0,99,0,v1,0,9999,

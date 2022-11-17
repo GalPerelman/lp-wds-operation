@@ -1,0 +1,9 @@
+name: 'Sopron'
+start_date: 2020, 8, 2, 0, 00)
+end_date: datetime.datetime(2020, 8, 3, 0, 00)
+problem_type: 'MILP'  # must be 'LP' or 'MILP'
+is_uncertain: 1
+uncertainty_set: 'Ellipsoid'  # ['Box', 'Ellipsoid']
+gamma: 1
+delta: 0.1
+tanks_min_vol: 'dynamic'  # must be 'constant' or 'dynamic'

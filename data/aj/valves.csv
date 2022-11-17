@@ -1,0 +1,3 @@
+name,from_zone_id,to_zone_id,max_flow,min_flow
+v_guy,51,3,9000,-9000
+v_eshtaol,3,54,9000,-9000

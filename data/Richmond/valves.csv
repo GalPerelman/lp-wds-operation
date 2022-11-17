@@ -1,0 +1,5 @@
+name,from_zone_id,to_zone_id,max_flow,min_flow
+v2,98,2,90,0
+v3,99,4,10000,0
+v4,4,99,10000,0
+v5,4,5,10000,0

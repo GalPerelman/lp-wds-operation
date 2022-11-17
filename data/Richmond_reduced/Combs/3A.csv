@@ -1,0 +1,5 @@
+flow,se,power,efficiency,head,num_units,unit1,unit2,unit3
+96.12,0.499479817,48.01,,,1,ON,OFF,OFF
+307.044,0.272925053,83.8,,,2,ON,OFF,ON
+121.32,0.717111771,87,,,2,ON,ON,OFF
+421.704,0.290962381,122.7,,,3,ON,ON,ON

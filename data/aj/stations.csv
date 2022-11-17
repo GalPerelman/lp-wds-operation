@@ -1,0 +1,9 @@
+name,from_zone_id,to_zone_id,voltage_type,electricity
+A4p,0,53,high,high
+B4p,53,54,high,high
+C4p,54,1,high,high
+D4p,1,56,high,high
+A3p,0,48,up,up
+B3p,48,51,up,up
+C3p,51,2,high,high
+D3p,2,56,high,high
