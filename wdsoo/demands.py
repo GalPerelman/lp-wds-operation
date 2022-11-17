@@ -3,7 +3,7 @@ import pandas as pd
 import datetime
 import warnings
 
-import utils
+from . import utils
 
 
 def load_from_csv(path, t1, t2):

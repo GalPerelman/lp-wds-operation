@@ -6,11 +6,11 @@ import time
 import yaml
 
 # local imports
-import demands
-from sim_results import Results
-import graphs
-import utils
-import opt
+from . import demands
+from .sim_results import Results
+from . import graphs
+from . import utils
+from . import opt
 
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 

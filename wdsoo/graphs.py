@@ -6,7 +6,7 @@ from matplotlib import dates as mdates
 from matplotlib.ticker import FormatStrFormatter
 from matplotlib import ticker as mtick
 
-import utils
+from . import utils
 
 
 class SimGraphs:
