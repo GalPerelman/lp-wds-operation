@@ -34,7 +34,7 @@ class Simulation:
         self.tariff_epsilon = 0.0002
         self.network = network
 
-        self.date_tariff = utils.vectorize_tariff(self.data_folder, self.time_range)
+        self.date_tariff = utils.vectorized_tariff(self.data_folder, self.time_range)
         self.date_tariff = utils.split_range(self.date_tariff, self.hr_step_size)
         self.time_range = self.date_tariff.index
 

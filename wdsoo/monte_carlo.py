@@ -127,7 +127,6 @@ class MC:
 
         sample = sample.reshape(self.n_sim, demands.shape[0], demands.shape[1])
         sample = demands * (1 + sample)
-        # sample[sample < 0] = 0
         sample[:, :, zeros_idx] = 0
         return sample, demands.T
 
@@ -147,31 +146,6 @@ def get_poitive_defined_cov(demands):
     """ observation (hours) in rows, features (demands zones) in columns - rowvar=False"""
     cov = np.cov(demands, rowvar=False)
     return cov
-
-
-
-def constant_correlation_mat(size, rho):
-    mat = np.ones((size, size)) * rho
-    diag = np.diag_indices(size)
-    mat[diag] = 1.
-    return mat
-
-
-def get_cov_by_correlation(demands, rho, norm=True):
-    if demands.shape[1] == 1:
-        std = demands.std(axis=0)
-    else:
-        std = demands.std(axis=1)
-
-    if norm:
-        std = std / np.linalg.norm(std)
-    sigma = np.zeros((demands.shape[1], demands.shape[1]))
-    np.fill_diagonal(sigma, std)
-    corr = constant_correlation_mat(demands.shape[1], rho)
-    cov = sigma @ corr @ sigma
-    return cov
-
-
 
 
 

@@ -2,38 +2,36 @@ import os
 import pandas as pd
 import numpy as np
 import datetime
-import json
-from itertools import chain, combinations
 
 pd.set_option('display.max_columns', 999)
 pd.set_option('display.width', 1000)
 
 
-class elec_tariff:
-    TaozTypeWinter = None
-    TaozTypeSummer = None
-    TaozTypeFallSpring = None
-    Tariffs = None
+class Electricity:
+    periods_season1 = None
+    periods_season2 = None
+    periods_season3 = None
+    all_periods = None
 
-    TaozCostWinter = None
-    TaozCostSummer = None
-    TaozCostFallSpring = None
-    costs = None
+    rates_season1 = None
+    rates_season2 = None
+    rates_season3 = None
+    all_rates = None
 
 
 def read_tariffs(data_folder):
-    elec_tariff.TaozTypeWinter = pd.read_csv(data_folder + '/electricity/TaozTypeWinter.csv', index_col=0)
-    elec_tariff.TaozTypeSummer = pd.read_csv(data_folder + '/electricity/TaozTypeSummer.csv', index_col=0)
-    elec_tariff.TaozTypeFallSpring = pd.read_csv(data_folder + '/electricity/TaozTypeFallSpring.csv', index_col=0)
-    elec_tariff.Tariffs = pd.concat(
-        [elec_tariff.TaozTypeWinter, elec_tariff.TaozTypeFallSpring, elec_tariff.TaozTypeSummer],
+    Electricity.periods_season1 = pd.read_csv(data_folder + '/electricity/TaozTypeWinter.csv', index_col=0)
+    Electricity.periods_season2 = pd.read_csv(data_folder + '/electricity/TaozTypeSummer.csv', index_col=0)
+    Electricity.periods_season3 = pd.read_csv(data_folder + '/electricity/TaozTypeFallSpring.csv', index_col=0)
+    Electricity.all_periods = pd.concat(
+        [Electricity.periods_season1, Electricity.periods_season3, Electricity.periods_season2],
         keys=['winter', 'fallspring', 'summer'])
 
-    elec_tariff.TaozCostWinter = pd.read_csv(data_folder + '/electricity/TaozCostWinter.csv', index_col='name')
-    elec_tariff.TaozCostSummer = pd.read_csv(data_folder + '/electricity/TaozCostSummer.csv', index_col='name')
-    elec_tariff.TaozCostFallSpring = pd.read_csv(data_folder + '/electricity/TaozCostFallSpring.csv', index_col='name')
-    elec_tariff.costs = pd.concat(
-        [elec_tariff.TaozCostWinter, elec_tariff.TaozCostFallSpring, elec_tariff.TaozCostSummer],
+    Electricity.rates_season1 = pd.read_csv(data_folder + '/electricity/TaozCostWinter.csv', index_col='name')
+    Electricity.rates_season2 = pd.read_csv(data_folder + '/electricity/TaozCostSummer.csv', index_col='name')
+    Electricity.rates_season3 = pd.read_csv(data_folder + '/electricity/TaozCostFallSpring.csv', index_col='name')
+    Electricity.all_rates = pd.concat(
+        [Electricity.rates_season1, Electricity.rates_season3, Electricity.rates_season2],
         keys=['winter', 'fallspring', 'summer'])
 
 
@@ -84,7 +82,7 @@ def patterns_to_dem(T1, T2, year_dem, path):
     return df['demand']
 
 
-def vectorize_tariff(data_folder, date_range):
+def vectorized_tariff(data_folder, date_range):
     read_tariffs(data_folder)
     df = pd.DataFrame(index=date_range)
     df['month'] = df.index.month
@@ -105,15 +103,13 @@ def vectorize_tariff(data_folder, date_range):
     df.loc[df.index.to_series().dt.date.astype(str).isin(holidays_evenings_list), 'weekday'] = 6
     df.loc[df.index.to_series().dt.date.astype(str).isin(holidays_list), 'weekday'] = 7
 
-    # Tariffs = pd.concat([TaozTypeWinter, TaozTypeFallSpring, TaozTypeSummer], keys=['winter', 'fallspring', 'summer'])
-    Tariffs = elec_tariff.Tariffs
+    Tariffs = Electricity.all_periods
     Tariffs = Tariffs.stack().reorder_levels([0, 2, 1])
     Tariffs = Tariffs.rename('Tariff')
     Tariffs.index = [Tariffs.index.get_level_values(0), Tariffs.index.get_level_values(1).astype(int),
                      Tariffs.index.get_level_values(2).astype(int)]
 
-    # costs = pd.concat([TaozCostWinter, TaozCostFallSpring, TaozCostSummer], keys=['winter', 'fallspring', 'summer'])
-    costs = elec_tariff.costs
+    costs = Electricity.all_rates
     costs = costs.stack().reorder_levels([0, 2, 1])
     costs = costs.rename('costs')
     costs = costs.reset_index().rename(columns={'level_0': 'season', 'level_1': 'voltage'})
@@ -168,6 +164,8 @@ def get_hours_between_timestamps(t1, t2):
 
 
 class EnergySupplier:
+    """ Future development """
+
     def __init__(self, name, data_path):
         self.name = name
         self.data_path = data_path
@@ -184,25 +182,3 @@ class EnergySupplier:
         df['day'] = (df.index / 24).astype(int)
         df = pd.merge(df, self.tariff, left_on='hour', right_index=True, how='left')
         return df
-
-
-
-if __name__ == '__main__':
-    T1 = datetime.datetime(2020, 3, 2, 0, 00)
-    T2 = datetime.datetime(2021, 3, 3, 0, 00)
-
-    e = EnergySupplier('CB', 'data/Richmond/electricity/CB.csv')
-    t1 = 0
-    t2 = 47
-    time_range = pd.Series(np.arange(start=t1, stop=t2 + 1, step=1))
-    tariff = e.tariff_vector(time_range)
-    tariff = split_range(tariff, 3)
-    print(tariff)
-
-    # tr = pd.date_range(start=T1, periods=24, freq="1H")
-    # tariff = vectorize_tariff('data/Richmond', tr)
-    # print(tariff)
-
-    # read_tariffs('data/Richmond')
-    # t = (elec_tariff.Tariffs)
-    # print(t.stack().reorder_levels([0, 2, 1]))

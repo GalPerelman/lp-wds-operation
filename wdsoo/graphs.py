@@ -75,9 +75,9 @@ class SimGraphs:
             ax = self.tariff_background(ax)
         return ax
 
-    def all_tanks(self, level=False):
+    def all_tanks(self, level=False, sharey=False):
         n_cols = int(len(self.sim.network.tanks)/2 + 1)
-        fig, axes = plt.subplots(nrows=self.n_rows, ncols=n_cols, sharex=True, figsize=(12, 6))
+        fig, axes = plt.subplots(nrows=self.n_rows, ncols=n_cols, sharex=True, sharey=sharey, figsize=(12, 6))
         axes = axes.ravel()
 
         for i, (tank_name, tank) in enumerate(self.sim.network.tanks.items()):

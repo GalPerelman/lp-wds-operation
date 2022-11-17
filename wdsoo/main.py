@@ -5,7 +5,7 @@ from .network import Network
 from .simulation import Simulation
 from . import graphs
 
-data_folder = 'data/Sopron'
+data_folder = 'data/sopron'
 net = Network(data_folder)
 
 t1 = datetime.datetime(2020, 8, 2, 0, 00)

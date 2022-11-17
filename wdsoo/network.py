@@ -21,6 +21,7 @@ class Network:
         self.build()
         self.comb_elements = {**self.pump_stations, **self.wells, **self.control_valves}
         self.flow_elements = {**self.pump_stations, **self.wells, **self.control_valves, **self.valves, **self.vsp}
+        self.cost_elements = {**self.pump_stations, **self.wells, **self.vsp}
 
     def declare_stations(self):
         df = pd.read_csv(os.path.join(self.data_folder, 'stations.csv'))
