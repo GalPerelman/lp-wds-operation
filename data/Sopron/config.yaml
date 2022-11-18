@@ -1,4 +1,4 @@
-name: 'Sopron'
+name: 'sopron'
 start_date: 2020, 8, 2, 0, 00)
 end_date: datetime.datetime(2020, 8, 3, 0, 00)
 problem_type: 'MILP'  # must be 'LP' or 'MILP'
