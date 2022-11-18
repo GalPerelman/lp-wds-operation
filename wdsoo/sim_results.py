@@ -51,58 +51,7 @@ class Results:
             total_demand += tank.vars['demand'].sum()
             all = pd.concat([all, tank.vars])
 
-        self.total_demand = total_demand
-
         df = df[df['vol'] != 0]
         df['se'] = df['energy'] / df['vol']
         df['sc'] = df['cost'] / df['vol']
-
         return df, total_demand
-
-
-
-
-
-    # def units_hours(self):
-#     summary = pd.DataFrame()
-#     for s in network.pump_station.all:
-#         df = s.vars.copy()
-#         df = df.drop(['step_size', 'group', 'eps'], axis=1)
-#         df = df[df['value'] > 0].replace({'ON': 1, 'OFF': 0})
-#         if df.empty:
-#             continue
-#
-#         df.index = df.index.droplevel(1)
-#         units_cols = [col for col in df.columns if col[:4] == 'unit']
-#         df = df.loc[:, units_cols].multiply(df['value'], axis='index')
-#         df = df.groupby(level=0).sum()
-#         df = df.reindex(sorted(df.columns), axis=1)
-#         df = pd.DataFrame(df.sum(axis=0)).reset_index()
-#         df.columns = ['unit', 'hours']
-#         df['station'] = s.name
-#         summary = pd.concat([summary, df])
-#     return summary
-
-
-    # def combs_summary(self):
-    #     summary = pd.DataFrame()
-    #     for s in network.pump_station.all:
-    #         df = s.vars.copy()
-    #         df = df.drop(['step_size','group','eps'], axis = 1)
-    #         df = df[df['value'] > 0].replace({'ON':1,'OFF':0})
-    #         if df.empty:
-    #             continue
-    #
-    #         mean_cols = [x for x in df.columns if (x != "cost") & (x != 'value')]
-    #         agg_dict = {col:'mean' for col in mean_cols}
-    #         agg_dict['value'] = 'sum'
-    #         df = df.groupby('comb').agg(agg_dict)
-    #
-    #         unit_cols = [col for col in df.columns if col[:4] == 'unit']
-    #         for u in unit_cols:
-    #             temp = df.loc[df[u] == 1].copy()
-    #             temp = temp.drop(unit_cols, axis=1)
-    #             temp['unit'] = u[4:]
-    #             temp['station'] = s.name
-    #             summary = pd.concat([summary, temp])
-    #     return summary

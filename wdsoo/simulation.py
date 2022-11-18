@@ -88,12 +88,12 @@ class Simulation:
         tank.vars['qmax'] = qmax
         tank.vars['v'] = tank.final_vol - tank.vars['demand'] - qmax
 
-        l = [tank.final_vol]
+        dynamic_min = [tank.final_vol]
         for i, t in enumerate(self.time_range[::-1]):
-            l = [max(tank.min_vol, l[0] + tank.vars.loc[t, 'demand'] - qmax)] + l
+            dynamic_min = [max(tank.min_vol, dynamic_min[0] + tank.vars.loc[t, 'demand'] - qmax)] + dynamic_min
 
-        tank.vars['min_vol'] = l[:-1]
-        tank.min_vol = np.array(l[:-1])
+        tank.vars['min_vol'] = dynamic_min[:-1]
+        tank.min_vol = np.array(dynamic_min[:-1])
         tank.vars = tank.vars.drop(['qmax', 'v'], axis=1)
 
     def build(self):
@@ -155,8 +155,8 @@ class Simulation:
             if self.dynamic_min_vol:
                 self.get_dynamic_min_vol(t)
             else:
-                t.vars['min_vol'] = np.full(shape=(len(t.vars),1), fill_value=t.min_vol)
-                t.min_vol = np.full(shape=(len(t.vars),1), fill_value=t.min_vol)
+                t.vars['min_vol'] = np.full(shape=(len(t.vars), 1), fill_value=t.min_vol)
+                t.min_vol = np.full(shape=(len(t.vars), 1), fill_value=t.min_vol)
 
     def lp_formulate(self):
         self.lp_model = opt.LP(self)
@@ -164,9 +164,9 @@ class Simulation:
         self.lp_model.one_comb_only()
         self.lp_model.mass_balance()
         self.lp_model.entities_dependency()
-        # self.lp_model.units_availability(self.data_folder + '/availability.csv')
-        # self.lp_model.station_volume()
-        # self.lp_model.multi_stations_volume()
+        self.lp_model.units_availability(self.data_folder + '/availability.csv')
+        self.lp_model.station_volume()
+        self.lp_model.multi_stations_volume()
         self.lp_model.vsp_volume()
         self.lp_model.vsp_changes()
         self.lp_model.max_power()
@@ -181,16 +181,3 @@ class Simulation:
 
     def get_results(self):
         self.results = Results(self)
-
-
-# if __name__ == '__main__':
-
-    #
-    #
-    # fig2, ax = plt.subplots()
-    # for w_name, w in sim.network.wells.items():
-    #     w.vars['f'] = w.vars['flow'] * w.vars['value']
-    #     ax.plot(sim.date_range, w.vars['f'], label=w.name)
-    #
-    # plt.legend()
-    # plt.show()

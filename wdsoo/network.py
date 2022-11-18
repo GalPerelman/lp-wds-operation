@@ -39,7 +39,7 @@ class Network:
         df = pd.read_csv(self.data_folder + '/wells.csv')
         df = df[df['include'] == 1]
         for index, row in df.iterrows():
-            w = Well(row['name'], row['to_zone_id'], row['flow'], row['se'], row['voltage_type'])
+            w = Well(**dict(row))
             self.wells[row['name']] = w
 
     def declare_tanks(self):
@@ -52,20 +52,20 @@ class Network:
         df = pd.read_csv(self.data_folder + '/control_valves.csv')
         if not df.empty:
             for index, row in df.iterrows():
-                cv = CV(self.data_folder, row['name'], row['from_zone_id'], row['to_zone_id'])
+                cv = CV(**dict(row))
                 self.control_valves[row['name']] = cv
 
     def declare_valves(self):
         df = pd.read_csv(self.data_folder + '/valves.csv')
         if not df.empty:
             for index, row in df.iterrows():
-                v = Valve(row['name'], row['from_zone_id'], row['to_zone_id'], row['max_flow'], row['min_flow'])
+                v = Valve(**dict(row))
                 self.valves[row['name']] = v
 
     def declare_zones(self):
         df = pd.read_csv(self.data_folder + '/zones.csv')
         for index, row in df.iterrows():
-            z = Zone(row['name'], row['id'])
+            z = Zone(**dict(row))
             self.zones[row['name']] = z
 
     def declare_power_stations(self):
