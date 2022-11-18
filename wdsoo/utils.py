@@ -52,8 +52,8 @@ def get_combs_for_unit(combs, unit_id):
     return combs[combs['unit ' + str(unit_id)] == 'ON']
 
 
-def patterns_to_dem(T1, T2, year_dem, path):
-    time_range = pd.date_range(start=T1, end=T2, freq='60min')
+def patterns_to_dem(t1, t2, year_dem, path):
+    time_range = pd.date_range(start=t1, end=t2, freq='60min')
 
     month = pd.read_csv(path + '/Month-Year.csv', encoding='windows-1255')
     month.columns = ['month', 'rate', 'cumulative']
