@@ -109,13 +109,16 @@ class Network:
 
 
 class PumpStation:
-    def __init__(self, data_folder, name, from_zone_id, to_zone_id, voltage_type, power_station, reduced_combs=False):
+    def __init__(self, data_folder, name, from_zone_id, to_zone_id, voltage_type, power_station, reduced_combs=False,
+                 **kwargs):
         self.data_folder = data_folder
         self.name = name
         self.voltage_type = voltage_type
         self.from_zone_id = from_zone_id
         self.to_zone_id = to_zone_id
         self.power_station = power_station
+        self.__dict__.update(kwargs)
+
         if reduced_combs:
             self.combs = self.reduce_combs()
         else:
@@ -130,7 +133,7 @@ class PumpStation:
 
 
 class VSP:
-    def __init__(self, name, from_zone_id, to_zone_id, power, voltage_type, min_flow, max_flow, init_flow):
+    def __init__(self, name, from_zone_id, to_zone_id, power, voltage_type, min_flow, max_flow, init_flow, **kwargs):
         self.name = name
         self.from_zone_id = from_zone_id
         self.to_zone_id = to_zone_id
@@ -139,22 +142,25 @@ class VSP:
         self.min_flow = min_flow
         self.max_flow = max_flow
         self.init_flow = init_flow
+        self.__dict__.update(kwargs)
 
 
 class Well:
-    def __init__(self, name, to_zone_id, flow, se, voltage_type):
+    def __init__(self, name, to_zone_id, flow, se, voltage_type, **kwargs):
         self.name = name
         self.to_zone_id = to_zone_id
         self.combs = pd.DataFrame({'flow': flow, 'se': se}, index=[0])
         self.voltage_type = voltage_type
+        self.__dict__.update(kwargs)
 
 
 class CV:
-    def __init__(self, data_folder, name, from_zone_id, to_zone_id):
+    def __init__(self, data_folder, name, from_zone_id, to_zone_id, **kwargs):
         self.data_folder = data_folder
         self.name = name
         self.from_zone_id = from_zone_id
         self.to_zone_id = to_zone_id
+        self.__dict__.update(kwargs)
 
         self.combs = self.load_combs()
 
@@ -163,16 +169,17 @@ class CV:
 
 
 class Valve:
-    def __init__(self, name, from_zone_id, to_zone_id, max_flow, min_flow):
+    def __init__(self, name, from_zone_id, to_zone_id, max_flow, min_flow, **kwargs):
         self.name = name
         self.from_zone_id = from_zone_id
         self.to_zone_id = to_zone_id
         self.max_flow = max_flow
         self.min_flow = min_flow
+        self.__dict__.update(kwargs)
 
 
 class Tank:
-    def __init__(self, name, zone, diameter, max_level, min_level, initial_level, final_level, pattern_zone):
+    def __init__(self, name, zone, diameter, max_level, min_level, initial_level, final_level, pattern_zone, **kwargs):
         self.name = name
         self.zone = zone
         self.diameter = diameter
@@ -183,6 +190,7 @@ class Tank:
         self.min_vol = self.level_to_vol(self.min_level)
         self.initial_vol = self.level_to_vol(self.initial_level)
         self.pattern_zone = pattern_zone
+        self.__dict__.update(kwargs)
 
         self.final_level = self.get_final_level(final_level)
         self.final_vol = self.level_to_vol(self.final_level)
@@ -210,15 +218,18 @@ class Tank:
 
 
 class Zone:
-    def __init__(self, name, zone_id):
+    def __init__(self, name, zone_id, tank, **kwargs):
         self.name = str(name)
         self.zone_id = zone_id
+        self.tank = tank
+        self.__dict__.update(kwargs)
 
 
 class PowerStation:
-    def __init__(self, name, max_power_off, max_power_on):
+    def __init__(self, name, max_power_off, max_power_on, **kwargs):
         self.name = name
         self.max_power = max_power_off
         self.max_power_on = max_power_on
+        self.__dict__.update(kwargs)
 
         self.elements = None

@@ -12,8 +12,6 @@ from . import graphs
 from . import utils
 from . import opt
 
-BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-
 pd.set_option('display.max_columns', 999)
 pd.set_option('display.width', 1000)
 pd.set_option('display.float_format', lambda x: '%.3f' % x)
@@ -38,6 +36,7 @@ class Simulation:
         self.date_tariff = utils.split_range(self.date_tariff, self.hr_step_size)
         self.time_range = self.date_tariff.index
 
+        self.demand_tanks = {}  # collection of tanks with actual demand values - for uncertainty analysis
         self.lp_model = None
         self.results = None
 
@@ -157,6 +156,9 @@ class Simulation:
             else:
                 t.vars['min_vol'] = np.full(shape=(len(t.vars), 1), fill_value=t.min_vol)
                 t.min_vol = np.full(shape=(len(t.vars), 1), fill_value=t.min_vol)
+
+            if t.vars['demand'].all():
+                self.demand_tanks[t_name] = t
 
     def lp_formulate(self):
         self.lp_model = opt.LP(self)

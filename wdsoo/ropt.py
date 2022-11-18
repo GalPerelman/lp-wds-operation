@@ -10,7 +10,7 @@ from rsome import lpg_solver as lpg
 from rsome import grb_solver as grb
 
 # local imports
-from . import uncertainty_utils
+from . import uncertainty_utils as uutils
 
 # solvers info
 GRB_STATUS = {1: 'LOADED', 2: 'OPTIMAL', 3: 'INFEASIBLE', 4: 'INF_OR_UNBD', 5: 'UNBOUNDED'}
@@ -19,28 +19,27 @@ CLP_STATUS = {-1: 'unknown', 0: 'OPTIMAL', 1: 'primal infeasible', 2: 'dual infe
 
 
 class RO:
-    def __init__(self, sim, gamma, dem_corr, cost_corr, uncertainty_set, vars_type='C'):
+    def __init__(self, sim, gamma, uset_type, dem_corr=0, cost_corr=0, vars_type='C'):
         self.sim = sim
         self.gamma = gamma
+        self.uset_type = uset_type
         self.dem_corr = dem_corr
         self.cost_corr = cost_corr
-        self.uncertainty_set = uncertainty_set
         self.vars_type = vars_type
 
         self.M = 999999
-        self.dem_map = self.demand_uncertainty_map()
-        self.u_norms = {'Ellipsoid': 2, 'Box': np.inf}
-        # self.u_data = pd.read_csv(os.path.join(self.sim.data_folder, 'uncertainty.csv'))
+        self.unorms = {'Ellipsoid': 2, 'Box': np.inf}
+        self.udata = pd.read_csv(os.path.join(self.sim.data_folder, 'uncertainty.csv'))
+        self.uelements = self.get_uncertain_elements()
 
         self.vars_df = pd.DataFrame(columns=['network_entity', 'name', 'entity_type', 'var', 'cost_vec'])
-        self.rand_vars_df = pd.DataFrame(columns=['name', 'set', 'gamma', 'delta', 'var', 'const'])
+        self.rand_vars_df = pd.DataFrame(columns=['name', 'var', 'uset'])
         self.model = ro.Model()
 
     def build(self):
         self.declare_vars()
         self.declare_random_vars()
-
-        self.objective_func()
+        # self.objective_func()
 
         self.one_comb_only()
         self.mass_balance()
@@ -95,32 +94,45 @@ class RO:
             self.model.st(x >= v.min_flow)
             self.model.st(x <= v.max_flow)
 
+    def get_uncertain_elements(self):
+        uelements = {}
+        # Demand uncertainty - tanks
+        utanks = {t_name: t for t_name, t in self.sim.network.tanks.items() if uutils.is_uncertain(t)}
+        uelements['tanks'] = utanks
+
+        # Cost uncertainty - cost elements
+        ucost = {x_name: x for x_name, x in self.sim.network.cost_elements.items() if uutils.is_uncertain(x)}
+        uelements['cost'] = ucost
+
+        return uelements
+
     def declare_random_vars(self):
-        for i, row in self.u_data.iterrows():
-            name = row['name']
-            norm = 2                #self.u_norms[row['u']]
-            gamma = self.gamma      #row['gamma']
-            delta = row['delta']
+        # demand random variables
+        affine_map = self.demand_uncertainty_map(self.uelements['tanks'])
+        z_dem = self.model.rvar((self.sim.num_steps, len(self.uelements['tanks'])), name='z_dem')
+        dem_uset = (rso.norm(z_dem.reshape(-1), self.uset_type) <= self.gamma)
+        uterm = affine_map @ z_dem.T
+        temp = pd.DataFrame({'name': 'demand', 'var': z_dem, 'uset': dem_uset, 'uterm': uterm}, index=['demand'])
+        self.rand_vars_df = pd.concat([self.rand_vars_df, temp])
 
-            var = self.vars_df.loc[self.vars_df['name'] == name]
-            z = self.model.rvar(len(var['cost_vec'].values[0]), name='z_' + name)
-            z_set = (rso.norm(z, norm) <= gamma)
-            temp = pd.DataFrame({'name': name, 'norm': norm, 'gamma': gamma, 'delta': delta, 'var': z, 'const': z_set},
-                                index=[len(self.rand_vars_df)])
-            self.rand_vars_df = pd.concat([self.rand_vars_df, temp])
+        # cost random variables
+        affine_map = self.cost_uncertainty_map(self.uelements['cost'])
+        z_cost = self.model.rvar((self.sim.num_steps, len(self.uelements['cost'])), name='z_cost')
+        cost_uset = (rso.norm(z_cost.reshape(-1), self.uset_type) <= self.gamma)
+        uterm = affine_map @ z_cost.T
+        temp = pd.DataFrame({'name': 'cost', 'var': z_cost, 'uset': cost_uset, 'uterm': uterm}, index=['cost'])
+        self.rand_vars_df = pd.concat([self.rand_vars_df, temp])
 
-    def demand_uncertainty_map(self):
-        demands = np.array([t.vars['demand'].values for t in self.sim.network.tanks.values()])
+    def demand_uncertainty_map(self, utanks):
+        demands = np.array([t.vars['demand'].values for t in utanks.values()])
         demands = demands.T
-        delta = uncertainty_utils.get_constant_correlation_set(demands, self.dem_corr)
+        delta = uutils.uset_from_observations(demands, self.dem_corr)
         return delta
 
-    def cost_uncertainty_map(self):
-        cost = np.hstack([x.vars['cost'].values.T for x in self.sim.network.cost_elements.values()])
-        cost = cost.T
-        print(cost)
-        delta = uncertainty_utils.get_constant_correlation_set(cost, self.dem_corr)
-        # return delta
+    def cost_uncertainty_map(self, cost_elements):
+        std = [e.uncertainty for e_name, e in cost_elements.items()]
+        delta = uutils.uset_from_std(std, self.cost_corr)
+        return delta
 
     def comb_matrix(self, x, inout, param=1):
         """ return a matrix for elements with discrete hydraulic states (pumps combinations) """
@@ -134,7 +146,7 @@ class RO:
         return matrix
 
     def not_comb_matrix(self, inout):
-        """ return a matrix for elements with continuous variables (valves flow, vsp) """
+        """ return a matrix for elements with continuous variables (valves, vsp, tanks) """
         flow_direction = {'in': 1, 'out': -1}
         v_matrix = flow_direction[inout] * np.diag(np.ones(self.sim.num_steps))
         return v_matrix
@@ -149,10 +161,11 @@ class RO:
             self.model.st(matrix @ x <= (np.ones((self.sim.num_steps, 1))))
 
     def mass_balance(self):
-        z = self.model.rvar(self.sim.num_steps)
-        z_set = (rso.norm(z, self.uncertainty_set) <= self.gamma)
+        # z = self.model.rvar(self.sim.num_steps)
+        # z_set = (rso.norm(z, self.uset_type) <= self.gamma)
         for tank_name, tank in self.sim.network.tanks.items():
-            demand = tank.vars['demand'].to_numpy() + self.dem_corr @ z
+            # demand = tank.vars['demand'].to_numpy() + self.dem_corr @ z
+
             for t in range(self.sim.num_steps):
                 LHS = tank.initial_vol
                 for s in tank.inflows:
@@ -245,8 +258,8 @@ class RO:
             self.model.st(lhs <= rhs)
 
     def get_uncertain_params(self, name):
-        params = self.u_data.loc[self.u_data['name'] == name]
-        norm = self.u_norms[params['u'].values[0]]
+        params = self.udata.loc[self.udata['name'] == name]
+        norm = self.unorms[params['u'].values[0]]
         gamma = params['gamma'].values[0]
         delta = params['delta'].values[0]
 
@@ -288,6 +301,15 @@ class RO:
         obj = (c1 @ x1).sum() + (c2 @ x2).sum() + cc1 + cc2
 
         self.model.minmax(obj, [z_set1, z_set2])
+
+        # for x_name, x in self.sim.network.cost_elements:
+        #     cost = x.vars['cost'].values
+        #     var = self.vars_df.loc[self.vars_df['name'] == x_name, 'var'].values[0]
+        #     if hasattr(x, 'combs'):
+        #         mat = self.comb_matrix(x, 'in')
+        #     else:
+        #         mat = self.not_comb_matrix('in')
+
 
         # for i, row in self.vars_df.iterrows():
         #     x = row['var']
