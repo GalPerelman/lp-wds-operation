@@ -33,14 +33,14 @@ class RO:
         self.uelements = self.get_uncertain_elements()
 
         self.vars_df = pd.DataFrame(columns=['network_entity', 'name', 'entity_type', 'var', 'cost_vec'])
-        self.rand_vars_df = pd.DataFrame(columns=['name', 'var', 'uset'])
+        self.rand_vars_df = pd.DataFrame(columns=['name', 'var', 'uset', 'uterm'])
         self.model = ro.Model()
 
     def build(self):
         self.declare_vars()
+        self.get_uncertain_elements()
         self.declare_random_vars()
-        # self.objective_func()
-
+        self.objective_func()
         self.one_comb_only()
         self.mass_balance()
         self.vsp_volume()
@@ -94,11 +94,26 @@ class RO:
             self.model.st(x >= v.min_flow)
             self.model.st(x <= v.max_flow)
 
+    def init_uncertainty(self):
+        uobjects = {}
+        for utype in self.udata['uncertainty_type'].unique():
+            elements = self.udata.loc[self.udata['uncertainty_type'] == utype, 'element'].to_list()
+            std_source = self.udata.loc[self.udata['uncertainty_type'] == utype, 'std_source'].iloc[0]
+            std = self.udata.loc[self.udata['uncertainty_type'] == utype, 'std_value'].values
+            data = None
+
+            if std_source == 'observed':
+                data = self.get_std(elements, utype)
+                std = None
+
+            u = Uncertainty(utype, std_source, elements, data, std)
+
     def get_uncertain_elements(self):
         uelements = {}
+
         # Demand uncertainty - tanks
         utanks = {t_name: t for t_name, t in self.sim.network.tanks.items() if uutils.is_uncertain(t)}
-        uelements['tanks'] = utanks
+        uelements['demand'] = utanks
 
         # Cost uncertainty - cost elements
         ucost = {x_name: x for x_name, x in self.sim.network.cost_elements.items() if uutils.is_uncertain(x)}
@@ -108,8 +123,9 @@ class RO:
 
     def declare_random_vars(self):
         # demand random variables
-        affine_map = self.demand_uncertainty_map(self.uelements['tanks'])
-        z_dem = self.model.rvar((self.sim.num_steps, len(self.uelements['tanks'])), name='z_dem')
+        affine_map = self.demand_uncertainty_map(self.uelements['demand'])
+        z_dem = self.model.rvar((self.sim.num_steps, len(self.uelements['demand'])), name='z_dem')
+        print(z_dem.shape)
         dem_uset = (rso.norm(z_dem.reshape(-1), self.uset_type) <= self.gamma)
         uterm = affine_map @ z_dem.T
         temp = pd.DataFrame({'name': 'demand', 'var': z_dem, 'uset': dem_uset, 'uterm': uterm}, index=['demand'])
@@ -118,6 +134,7 @@ class RO:
         # cost random variables
         affine_map = self.cost_uncertainty_map(self.uelements['cost'])
         z_cost = self.model.rvar((self.sim.num_steps, len(self.uelements['cost'])), name='z_cost')
+        print(z_dem.shape)
         cost_uset = (rso.norm(z_cost.reshape(-1), self.uset_type) <= self.gamma)
         uterm = affine_map @ z_cost.T
         temp = pd.DataFrame({'name': 'cost', 'var': z_cost, 'uset': cost_uset, 'uterm': uterm}, index=['cost'])
@@ -148,8 +165,8 @@ class RO:
     def not_comb_matrix(self, inout):
         """ return a matrix for elements with continuous variables (valves, vsp, tanks) """
         flow_direction = {'in': 1, 'out': -1}
-        v_matrix = flow_direction[inout] * np.diag(np.ones(self.sim.num_steps))
-        return v_matrix
+        matrix = flow_direction[inout] * np.diag(np.ones(self.sim.num_steps))
+        return matrix
 
     def one_comb_only(self):
         for station_name, station in self.sim.network.comb_elements.items():
@@ -161,10 +178,19 @@ class RO:
             self.model.st(matrix @ x <= (np.ones((self.sim.num_steps, 1))))
 
     def mass_balance(self):
-        # z = self.model.rvar(self.sim.num_steps)
-        # z_set = (rso.norm(z, self.uset_type) <= self.gamma)
+        fictive_z = self.model.rvar(self.sim.num_steps, 'fictive')
+        print(fictive_z.shape)
+        udemand = self.rand_vars_df.loc[self.rand_vars_df['name'] == 'demand', 'uterm'].values[0]
+        z_set = self.rand_vars_df.loc[self.rand_vars_df['name'] == 'demand', 'uset'].values[0]
+        i = 0
         for tank_name, tank in self.sim.network.tanks.items():
-            # demand = tank.vars['demand'].to_numpy() + self.dem_corr @ z
+            demand = tank.vars['demand'].to_numpy()
+            if tank_name in self.uelements['demand'].keys():
+                u = udemand[i, :].T
+                demand += u
+                i += 1
+            else:
+                demand += fictive_z
 
             for t in range(self.sim.num_steps):
                 LHS = tank.initial_vol
@@ -186,7 +212,7 @@ class RO:
                     x = self.vars_df.loc[self.vars_df['name'] == vsp.name, 'var'].values[0]
                     LHS = LHS + (temp_matrix * x[:t + 1]).sum()
 
-                self.model.st((LHS - demand[:t + 1].sum() >= tank.min_vol).forall(z_set))
+                self.model.st((LHS - demand[:t + 1].sum() >= tank.min_vol[t]).forall(z_set))
                 self.model.st((LHS - demand[:t + 1].sum() <= tank.max_vol).forall(z_set))
 
             # Final volume constraint - last LHS is for t = T
@@ -267,20 +293,33 @@ class RO:
 
     def objective_func(self):
         obj = 0
-        usets = []
+        ucost = self.rand_vars_df.loc[self.rand_vars_df['name'] == 'cost', 'uterm'].values[0]
+        z_set = self.rand_vars_df.loc[self.rand_vars_df['name'] == 'cost', 'uset'].values[0]
+        ui = 0
 
-        # z1 = self.model.rvar(72, name='z_ps')
-        # z1_set = (rso.norm(z1, 2) <= self.gamma)
-        # z2 = self.model.rvar(24, name='z_w')
-        # z2_set = (rso.norm(z2, 2) <= self.gamma)
-        # usets = [z1_set, z2_set]
+        for i, row in self.vars_df.iterrows():
+            x = row['var']
+            c = row['cost_vec']
+            name = row['name']
+            if name in self.uelements['cost'].keys():
+                element = self.uelements['cost'][name]
+                if hasattr(element, 'combs'):
+                    matrix = self.comb_matrix(element, 'in')
+                else:
+                    matrix = self.not_comb_matrix('in')
 
+                obj += (ucost[ui, :] @ matrix @ x).sum()
+
+            obj += (c @ x).sum()
+
+        self.model.minmax(obj, z_set)
+
+        #################################################################################
+        """
         e1 = self.vars_df.loc[self.vars_df['name'] == 'P1', 'network_entity'].values[0]
         e2 = self.vars_df.loc[self.vars_df['name'] == 'W1', 'network_entity'].values[0]
-
         x1 = self.vars_df.loc[self.vars_df['name'] == 'P1', 'var'].values[0]
         x2 = self.vars_df.loc[self.vars_df['name'] == 'W1', 'var'].values[0]
-
         c1 = self.vars_df.loc[self.vars_df['name'] == 'P1', 'cost_vec'].values[0]
         c2 = self.vars_df.loc[self.vars_df['name'] == 'W1', 'cost_vec'].values[0]
 
@@ -301,31 +340,8 @@ class RO:
         obj = (c1 @ x1).sum() + (c2 @ x2).sum() + cc1 + cc2
 
         self.model.minmax(obj, [z_set1, z_set2])
-
-        # for x_name, x in self.sim.network.cost_elements:
-        #     cost = x.vars['cost'].values
-        #     var = self.vars_df.loc[self.vars_df['name'] == x_name, 'var'].values[0]
-        #     if hasattr(x, 'combs'):
-        #         mat = self.comb_matrix(x, 'in')
-        #     else:
-        #         mat = self.not_comb_matrix('in')
-
-
-        # for i, row in self.vars_df.iterrows():
-        #     x = row['var']
-        #     c = row['cost_vec']
-        #     if row['name'] in self.u_data['name'].to_list():
-        #         # z = self.rand_vars_df.loc[self.rand_vars_df['name'] == row['name'], 'var'].values[0]
-        #         # z_set = self.rand_vars_df.loc[self.rand_vars_df['name'] == row['name'], 'const'].values[0]
-        #         # d = self.rand_vars_df.loc[self.rand_vars_df['name'] == row['name'], 'delta'].values[0]
-        #         # c = c * (1 + d * z)
-        #         d = self.cost_delta[row['name']]
-        #         c = c + d @ z
-        #         usets.append(z_set)
-        #
-        #     obj += (c @ x).sum()
-        # self.model.minmax(obj, usets)
-
+        """
+        #################################################################################
         # x1 = self.vars_df.loc[self.vars_df['name'] == 'P1', 'var'].values[0]
         # c1 = self.vars_df.loc[self.vars_df['name'] == 'P1', 'cost_vec'].values[0]
         # x2 = self.vars_df.loc[self.vars_df['name'] == 'W1', 'var'].values[0]
@@ -381,3 +397,18 @@ class RO:
             df['volume'] = t.initial_vol + (df['inflow'] + df['demand']).cumsum()
             t.vars['value'] = df['volume']
             t.vars['inflow'] = df['inflow']
+
+
+class Uncertainty:
+    def __init__(self, category, std_source, elements, observed_data, std):
+        self.category = category
+        self.std_source = std_source
+        self.elements = elements
+        self.observed_data = observed_data
+        self.std = std
+
+    def construct_set(self):
+        pass
+
+    def declare_vars(self):
+        pass
