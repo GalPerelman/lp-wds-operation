@@ -20,19 +20,19 @@ class Electricity:
 
 
 def read_tariffs(data_folder):
-    Electricity.periods_season1 = pd.read_csv(data_folder + '/electricity/TaozTypeWinter.csv', index_col=0)
-    Electricity.periods_season2 = pd.read_csv(data_folder + '/electricity/TaozTypeSummer.csv', index_col=0)
-    Electricity.periods_season3 = pd.read_csv(data_folder + '/electricity/TaozTypeFallSpring.csv', index_col=0)
+    Electricity.periods_season1 = pd.read_csv(data_folder + '/electricity/periods_season1.csv', index_col=0)
+    Electricity.periods_season2 = pd.read_csv(data_folder + '/electricity/periods_season2.csv', index_col=0)
+    Electricity.periods_season3 = pd.read_csv(data_folder + '/electricity/periods_season3.csv', index_col=0)
     Electricity.all_periods = pd.concat(
         [Electricity.periods_season1, Electricity.periods_season3, Electricity.periods_season2],
-        keys=['winter', 'fallspring', 'summer'])
+        keys=['1', '2', '3'])
 
-    Electricity.rates_season1 = pd.read_csv(data_folder + '/electricity/TaozCostWinter.csv', index_col='name')
-    Electricity.rates_season2 = pd.read_csv(data_folder + '/electricity/TaozCostSummer.csv', index_col='name')
-    Electricity.rates_season3 = pd.read_csv(data_folder + '/electricity/TaozCostFallSpring.csv', index_col='name')
+    Electricity.rates_season1 = pd.read_csv(data_folder + '/electricity/rates_season1.csv', index_col='name')
+    Electricity.rates_season2 = pd.read_csv(data_folder + '/electricity/rates_season2.csv', index_col='name')
+    Electricity.rates_season3 = pd.read_csv(data_folder + '/electricity/rates_season3.csv', index_col='name')
     Electricity.all_rates = pd.concat(
         [Electricity.rates_season1, Electricity.rates_season3, Electricity.rates_season2],
-        keys=['winter', 'fallspring', 'summer'])
+        keys=['1', '2', '3'])
 
 
 def get_special_dates(data_folder, years_list):
@@ -90,11 +90,8 @@ def vectorized_tariff(data_folder, date_range):
     df['day'] = df.index.day
     df['hr'] = df.index.hour
 
-    df['season'] = df['month'].map({1: 'winter', 2: 'winter',
-                                    3: 'fallspring', 4: 'fallspring', 5: 'fallspring', 6: 'fallspring',
-                                    7: 'summer', 8: 'summer',
-                                    9: 'fallspring', 10: 'fallspring', 11: 'fallspring',
-                                    12: 'winter'})
+    df['season'] = df['month'].map({1: '1', 2: '1', 3: '2', 4: '2', 5: '2', 6: '2', 7: '3', 8: '3', 9: '2', 10: '2',
+                                    11: '2', 12: '1'})
 
     years_list = date_range.year.unique()
     holidays_evenings_list, holidays_list = get_special_dates(data_folder, years_list)
