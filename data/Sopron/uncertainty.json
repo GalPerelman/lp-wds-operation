@@ -1,0 +1,84 @@
+{
+	"demand" : {
+		"elements" : {
+			"Tank 4" : {
+				"element_type" : "tank",
+				"std" : 1,
+				"time_std" : null,
+				"time_corr" : 0
+			},
+			"Tank 5" : {
+				"element_type" : "tank",
+				"std" : 1,
+				"time_std" : null,
+				"time_corr" : 0
+			},
+			"Tank 6" : {
+				"element_type" : "tank",
+				"std" : 1,
+				"time_std" : null,
+				"time_corr" : 0
+			},
+			"Tank 7" : {
+				"element_type" : "tank",
+				"std" : 1,
+				"time_std" : null,
+				"time_corr" : 0
+			}
+		},
+		"elements_correlation" : 0
+	},
+	"cost" : {
+		"elements" : {
+			"P1" : {
+				"element_type" : "pump_station",
+				"std" : 5,
+				"time_std" : null,
+				"time_corr" : null
+			},
+			"P2" : {
+				"element_type" : "pump_station",
+				"std" : 5,
+				"time_std" : null,
+				"time_corr" : null
+			},
+			"P3" : {
+				"element_type" : "pump_station",
+				"std" : 15,
+				"time_std" : null,
+				"time_corr" : null
+			},
+			"P4" : {
+				"element_type" : "pump_station",
+				"std" : 15,
+				"time_std" : null,
+				"time_corr" : null
+			},
+			"P5" : {
+				"element_type" : "pump_station",
+				"std" : 5,
+				"time_std" : null,
+				"time_corr" : null
+			},
+			"P6" : {
+				"element_type" : "pump_station",
+				"std" : 5,
+				"time_std" : null,
+				"time_corr" : null
+			},
+			"P7" : {
+				"element_type" : "pump_station",
+				"std" : 5,
+				"time_std" : null,
+				"time_corr" : null
+			},
+			"P8" : {
+				"element_type" : "pump_station",
+				"std" : 5,
+				"time_std" : null,
+				"time_corr" : null
+			}
+		},
+		"elements_correlation" : 0.8
+	}
+}

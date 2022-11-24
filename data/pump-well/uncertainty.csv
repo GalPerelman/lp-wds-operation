@@ -1,3 +1,0 @@
-type,name,parameter,u,gamma,delta
-station,P1,cost,Ellipsoid,5,1e-05
-well,W1,cost,Ellipsoid,5,1e-05
