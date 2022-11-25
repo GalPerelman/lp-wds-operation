@@ -163,6 +163,7 @@ class RO:
         """
         if len(self.ucategories['demand'].elements) > 0:
             z_dem = self.model.rvar((self.sim.num_steps, len(self.ucategories['demand'].elements)), name='z_dem')
+            z_set = rso.norm(z_dem.reshape(-1), self.uset_type) <= self.gamma
             tanks_delta = self.ucategories['demand'].affine_map
             if tanks_delta is not None:
                 p = tanks_delta @ z_dem.T
@@ -171,7 +172,7 @@ class RO:
             demand = tank.vars['demand'].to_numpy()
             if tank_name in self.ucategories['demand'].elements.keys():
                 uelement = self.ucategories['demand'].elements[tank_name]
-                z_set = rso.norm(z_dem[:, uelement.idx], self.uset_type) <= self.gamma
+
                 time_delta = uelement.time_affine_map
 
                 if time_delta is None and tanks_delta is None:
@@ -192,7 +193,7 @@ class RO:
                     self.model.st((lhs - demand[:t + 1].sum() >= tank.min_vol[t]).forall(z_set))
                     self.model.st((lhs - demand[:t + 1].sum() <= tank.max_vol).forall(z_set))
 
-                # Final volume constraint - last LHS is for t = T
+                # Final volume constraint
                 lhs = self.mass_balance_lhs(tank, self.sim.num_steps)
                 self.model.st((lhs - demand.sum() >= tank.final_vol).forall(z_set))
 
@@ -280,10 +281,10 @@ class RO:
 
         """
         obj = 0
-        u_sets = []
 
         if len(self.ucategories['cost'].elements) > 0:
             z_cost = self.model.rvar((self.sim.num_steps, len(self.ucategories['cost'].elements)), name='z_cost')
+            z_set = rso.norm(z_cost.reshape(-1), self.uset_type) <= self.gamma
             elements_delta = self.ucategories['cost'].affine_map
             if elements_delta is not None:
                 p = elements_delta @ z_cost.T  # (n_elements x n_elements) @ (n_elements x T) = (n_elements x T)
@@ -301,8 +302,6 @@ class RO:
                     matrix = self.not_comb_matrix('in')
 
                 uelement = self.ucategories['cost'].elements[name]
-                z_set = rso.norm(z_cost[:, uelement.idx], self.uset_type) <= self.gamma
-                u_sets.append(z_set)
                 time_delta = uelement.time_affine_map
 
                 if time_delta is None and elements_delta is None:
@@ -321,7 +320,7 @@ class RO:
 
             obj += (c @ x).sum()
 
-        self.model.minmax(obj, u_sets)
+        self.model.minmax(obj, z_set)
 
     def solve(self):
         self.model.solve(grb, display=False, params={'DualReductions': 0})
