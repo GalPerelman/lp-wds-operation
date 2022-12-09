@@ -167,8 +167,6 @@ class Simulation:
         self.lp_model.mass_balance()
         self.lp_model.entities_dependency()
         self.lp_model.units_availability(self.data_folder + '/availability.csv')
-        self.lp_model.station_volume()
-        self.lp_model.multi_stations_volume()
         self.lp_model.vsp_volume()
         self.lp_model.vsp_changes()
         self.lp_model.max_power()
