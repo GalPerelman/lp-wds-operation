@@ -1,0 +1,53 @@
+{
+	"demand" : {
+		"elements" : {
+			"Tank 1": {
+				"element_type": "tank",
+				"std": [
+					6.25,
+					6.12,
+					6.44,
+					6.41,
+					6.90,
+					7.86,
+					8.73,
+					9.36,
+					9.71,
+					9.94,
+					10.16,
+					10.39,
+					10.71,
+					11.02,
+					11.11,
+					10.95,
+					10.75,
+					9.87,
+					8.83,
+					7.82,
+					7.11,
+					6.79,
+					6.64,
+					6.41
+				],
+				"corr": 0.8
+			}
+		},
+		"elements_correlation" : null
+	},
+	"cost" : {
+		"elements" : {
+			"P1" : {
+				"element_type" : "pump_station",
+				"std" : [10],
+				"corr" : 0
+			},
+			"W1" : {
+				"element_type" : "pump_station",
+				"std" : [5],
+				"corr" : 0
+			}
+		},
+		"elements_correlation" : [[1, 0.8],
+								  [0.8, 1]]
+	}
+}
