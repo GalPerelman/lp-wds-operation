@@ -2,12 +2,9 @@ import os
 import pandas as pd
 import numpy as np
 import operator
-import json
 
 from rsome import ro
 import rsome as rso
-from rsome import clp_solver as clp
-from rsome import lpg_solver as lpg
 from rsome import grb_solver as grb
 
 # local imports
@@ -20,98 +17,120 @@ CLP_STATUS = {-1: 'unknown', 0: 'OPTIMAL', 1: 'primal infeasible', 2: 'dual infe
 
 
 class RO:
-    def __init__(self, sim, gamma, uset_type, vars_type='C'):
+    def __init__(self, sim, gamma, uset_type):
         self.sim = sim
         self.gamma = gamma
         self.uset_type = uset_type
-        self.vars_type = vars_type
 
-        self.ucategories = self.init_uncertainty()
+        self.udata = uutils.init_uncertainty(os.path.join(self.sim.data_folder, 'uncertainty', 'uncertainty.json'))
 
-        self.vars_df = pd.DataFrame(columns=['network_entity', 'name', 'entity_type', 'var', 'cost_vec'])
         self.model = ro.Model()
+        self.x = self.declare_variables()
+        self.vars_df = self.assign_variables()
 
     def build(self):
-        self.declare_vars()
         self.one_comb_only()
-        self.mass_balance()
+        self.build_mass_balance()
         self.vsp_volume()
         self.vsp_changes()
         self.max_power()
         self.objective_func()
 
-    def declare_vars(self):
+    def declare_variables(self):
+        n = sum([len(s.combs) for s in self.sim.network.pump_stations.values()])
+        n += len(self.sim.network.vsp.items())
+        n += len(self.sim.network.wells.items())
+        n += sum([len(cv.combs) for cv in self.sim.network.control_valves.values()])
+        n += len(self.sim.network.valves.items())
+        x = self.model.dvar(n * self.sim.num_steps)
+        return x
+
+    def assign_variables(self):
+        df = pd.DataFrame()
         for s_name, s in self.sim.network.pump_stations.items():
-            x = self.model.dvar(shape=self.sim.num_steps * len(s.combs), vtype=self.vars_type, name=s.name + '_x')
-            self.vars_df = self.vars_df.append({'network_entity': s, 'name': s.name,
-                                                'entity_type': 'station', 'var': x,
-                                                'cost_vec': s.vars['cost'].to_numpy().astype(float)},
-                                               ignore_index=True)
-            self.model.st(x >= 0)
-            self.model.st(x <= 1)
+            temp = pd.DataFrame(s.vars[['flow', 'cost']].values, columns=['flow', 'cost'])
+            temp.index = range(len(df), len(df) + len(temp))
+            temp.loc[:, 'network_element'] = s
+            temp.loc[:, 'name'] = s_name
+            temp.loc[:, 'element_type'] = 'station'
+
+            self.model.st(self.x[temp.index] >= 0)
+            self.model.st(self.x[temp.index] <= 1)
+
+            df = pd.concat([df, temp])
 
         for vsp_name, vsp in self.sim.network.vsp.items():
-            x = self.model.dvar(shape=self.sim.num_steps, vtype='C', name=vsp.name + '_x')
-            self.vars_df = self.vars_df.append({'network_entity': vsp, 'name': vsp.name, 'entity_type': 'vsp', 'var': x,
-                                                'cost_vec': vsp.vars['cost'].to_numpy().astype(float)},
-                                               ignore_index=True)
+            temp = pd.DataFrame(vsp.vars[['cost']].values, columns=['cost'])
+            temp.index = range(len(df), len(df) + len(temp))
+            temp.loc[:, 'network_element'] = vsp
+            temp.loc[:, 'name'] = vsp_name
+            temp.loc[:, 'element_type'] = 'vsp'
+            df = pd.concat([df, temp])
 
-            self.model.st(x >= vsp.min_flow)
-            self.model.st(x <= vsp.max_flow)
+            self.model.st(self.x[temp.index] >= vsp.min_flow)
+            self.model.st(self.x[temp.index] <= vsp.max_flow)
             if not np.isnan(vsp.init_flow):
-                self.model.st(x[0] == vsp.init_flow)
+                self.model.st(self.x[temp.index[0]] == vsp.init_flow)
 
         for well_name, well in self.sim.network.wells.items():
-            x = self.model.dvar(shape=self.sim.num_steps, vtype=self.vars_type, name=well.name + '_x')
-            self.vars_df = self.vars_df.append({'network_entity': well, 'name': well.name, 'entity_type': 'well',
-                                                'var': x, 'cost_vec': well.vars['cost'].to_numpy().astype(float)},
-                                               ignore_index=True)
-            self.model.st(x >= 0)
-            self.model.st(x <= 1)
+            temp = pd.DataFrame(well.vars[['flow', 'cost']].values, columns=['flow', 'cost'])
+            temp.index = range(len(df), len(df) + len(temp))
+            temp.loc[:, 'network_element'] = well
+            temp.loc[:, 'name'] = well_name
+            temp.loc[:, 'element_type'] = 'well'
+            df = pd.concat([df, temp])
+
+            self.model.st(self.x[temp.index] >= 0)
+            self.model.st(self.x[temp.index] <= 1)
 
         for cv_name, cv in self.sim.network.control_valves.items():
-            x = self.model.dvar(shape=self.sim.num_steps * len(cv.combs), vtype=self.vars_type, name=cv.name + '_x')
-            self.vars_df = self.vars_df.append({'network_entity': cv, 'name': cv.name, 'entity_type': 'cv', 'var': x,
-                                                'cost_vec': cv.vars['cost'].to_numpy().astype(float)},
-                                               ignore_index=True)
+            temp = pd.DataFrame(cv.vars[['flow', 'cost']].values, columns=['flow', 'cost'])
+            temp.index = range(len(df), len(df) + len(temp))
+            temp.loc[:, 'network_element'] = cv
+            temp.loc[:, 'name'] = cv_name
+            temp.loc[:, 'element_type'] = 'cv'
+            df = pd.concat([df, temp])
 
-            self.model.st(x >= 0)
-            self.model.st(x <= 1)
+            self.model.st(self.x[temp.index] >= 0)
+            self.model.st(self.x[temp.index] <= 1)
 
         for v_name, v in self.sim.network.valves.items():
-            x = self.model.dvar(shape=self.sim.num_steps, vtype='C', name=v.name + '_x')
-            self.vars_df = self.vars_df.append({'network_entity': v, 'name': v.name, 'entity_type': 'cv', 'var': x,
-                                                'cost_vec': v.vars['cost'].to_numpy().astype(float)},
-                                               ignore_index=True)
+            temp = pd.DataFrame(v.vars['cost'].values, columns=['cost'])
+            temp.index = range(len(df), len(df) + len(temp))
+            temp.loc[:, 'network_element'] = v
+            temp.loc[:, 'name'] = v_name
+            temp.loc[:, 'element_type'] = 'v'
+            df = pd.concat([df, temp])
 
-            self.model.st(x >= v.min_flow)
-            self.model.st(x <= v.max_flow)
+            self.model.st(self.x[temp.index] >= v.min_flow)
+            self.model.st(self.x[temp.index] <= v.max_flow)
 
-    def init_uncertainty(self):
-        ucategories = {}
-        with open(os.path.join(self.sim.data_folder, 'uncertainty.json')) as f:
-            udata = json.load(f)
+        return df
 
-            for ucat, ucat_data in udata.items():
-                cat_elements = {}
-                for idx, (e_name, e_data) in enumerate(ucat_data['elements'].items()):
-                    ue = UElement(ucat, e_name, idx, **e_data)
-                    cat_elements[e_name] = ue
+    def get_x_idx(self, name):
+        xmin_idx = self.vars_df.loc[self.vars_df['name'] == name].index.min()
+        xmax_idx = self.vars_df.loc[self.vars_df['name'] == name].index.max() + 1
+        return xmin_idx, xmax_idx
 
-                uc = UCategory(ucat, cat_elements, ucat_data['elements_correlation'])
-                ucategories[ucat] = uc
-
-        return ucategories
-
-    def comb_matrix(self, x, inout, param=1):
+    def comb_matrix(self, element, inout, param=None):
         """ return a matrix for elements with discrete hydraulic states (pumps combinations) """
         flow_direction = {'in': 1, 'out': -1}
-        matrix = np.zeros([self.sim.num_steps, self.sim.num_steps * len(x.combs)])
-        rows = np.hstack([np.repeat(i, len(x.combs)) for i in range(self.sim.num_steps)])
-        cols = np.arange(len(x.combs) * self.sim.num_steps)
+        matrix = np.zeros([self.sim.num_steps, self.sim.num_steps * len(element.combs)])
+        rows = np.hstack([np.repeat(i, len(element.combs)) for i in range(self.sim.num_steps)])
+        cols = np.arange(len(element.combs) * self.sim.num_steps)
         matrix[rows, cols] = flow_direction[inout]
-        if param != 1:
-            matrix = matrix * x.vars[param].to_numpy()
+        if param is not None:
+            matrix = matrix * element.vars[param].to_numpy()
+        return matrix
+
+    def cumulative_comb_matrix(self, element, inout, param=None):
+        flow_direction = {'in': 1, 'out': -1}
+        matrix = np.zeros([self.sim.num_steps, self.sim.num_steps * len(element.combs)])
+        rows = np.hstack([np.repeat(i - 1, len(element.combs) * i) for i in range(1, self.sim.num_steps + 1)])
+        cols = np.hstack([np.arange(len(element.combs) * (t + 1)) for t in range(self.sim.num_steps)])
+        matrix[rows, cols] = flow_direction[inout]
+        if param is not None:
+            matrix = matrix * element.vars[param].to_numpy()
         return matrix
 
     def not_comb_matrix(self, inout):
@@ -120,9 +139,17 @@ class RO:
         matrix = flow_direction[inout] * np.diag(np.ones(self.sim.num_steps))
         return matrix
 
+    def cumulative_not_comb_matrix(self, inout):
+        flow_direction = {'in': 1, 'out': -1}
+        matrix = np.zeros((self.sim.num_steps, self.sim.num_steps))
+        matrix[np.tril_indices(self.sim.num_steps)] = flow_direction[inout]
+        return matrix
+
     def one_comb_only(self):
         for station_name, station in self.sim.network.comb_elements.items():
-            x = self.vars_df.loc[self.vars_df['name'] == station.name, 'var'].values[0]
+            idx = self.vars_df.loc[self.vars_df['name'] == station.name].index
+            x = self.x[idx]
+
             matrix = np.zeros([self.sim.num_steps, self.sim.num_steps * len(station.combs)])
             rows = np.hstack([np.repeat(i, len(station.combs)) for i in range(self.sim.num_steps)])
             cols = np.arange(len(station.combs) * self.sim.num_steps)
@@ -130,80 +157,94 @@ class RO:
             self.model.st(matrix @ x <= (np.ones((self.sim.num_steps, 1))))
 
     def mass_balance_lhs(self, tank, t):
-        LHS = tank.initial_vol
+        lhs = tank.initial_vol
         for s in tank.inflows:
             temp_matrix = self.comb_matrix(s, 'in', 'flow')[:t + 1, :(t + 1) * len(s.combs)]
             x = self.vars_df.loc[self.vars_df['name'] == s.name, 'var'].values[0]
-            LHS = LHS + (temp_matrix * x[:(t + 1) * len(s.combs)]).sum()
+            lhs = lhs + (temp_matrix * x[:(t + 1) * len(s.combs)]).sum()
         for vsp in tank.vsp_inflows:
             temp_matrix = self.not_comb_matrix('in')[:t + 1, :t + 1]
             x = self.vars_df.loc[self.vars_df['name'] == vsp.name, 'var'].values[0]
-            LHS = LHS + (temp_matrix * x[:t + 1]).sum()
+            lhs = lhs + (temp_matrix * x[:t + 1]).sum()
 
         for s in tank.outflows:
             temp_matrix = self.comb_matrix(s, 'out', 'flow')[:t + 1, :(t + 1) * len(s.combs)]
             x = self.vars_df.loc[self.vars_df['name'] == s.name, 'var'].values[0]
-            LHS = LHS + (temp_matrix * x[:(t + 1) * len(s.combs)]).sum()
+            lhs = lhs + (temp_matrix * x[:(t + 1) * len(s.combs)]).sum()
         for vsp in tank.vsp_outflows:
             temp_matrix = self.not_comb_matrix('out')[:t + 1, :t + 1]
             x = self.vars_df.loc[self.vars_df['name'] == vsp.name, 'var'].values[0]
-            LHS = LHS + (temp_matrix * x[:t + 1]).sum()
+            lhs = lhs + (temp_matrix * x[:t + 1]).sum()
 
-        return LHS
+        return lhs
 
-    def mass_balance(self):
-        """
-        Δ:      affine map - a matrix defines the uncertainty set correlations. computed from cov matrix Σ = ΔΔᵀ
-        p:      a multiplication of affine map with random variable p = Δ @ z
+    def mass_balance(self, tanks: dict, affine_map=None):
+        T = self.sim.num_steps
+        ntanks = len(tanks)
 
-        In operation problems we have two mapping actions:
-            map correlation between time steps
-            map correlation between different elements
+        lhs = np.zeros((ntanks * T, self.x.shape[0]), dtype=float)
+        lhs_init = np.zeros((ntanks * T, 1), dtype=float)
+        rhs_min = np.zeros((ntanks * T, 1), dtype=float)
+        rhs_max = np.zeros((ntanks * T, 1), dtype=float)
+        rhs_final = np.zeros((ntanks, 1), dtype=float)
+        b = np.zeros((ntanks * T, 1), dtype=float)
 
-        """
-        if len(self.ucategories['demand'].elements) > 0:
-            z_dem = self.model.rvar((self.sim.num_steps, len(self.ucategories['demand'].elements)), name='z_dem')
-            z_set = rso.norm(z_dem.reshape(-1), self.uset_type) <= self.gamma
-            tanks_delta = self.ucategories['demand'].affine_map
-            if tanks_delta is not None:
-                p = tanks_delta @ z_dem.T
+        for tank_idx, (tank_name, tank) in enumerate(tanks.items()):
 
-        for tank_name, tank in self.sim.network.tanks.items():
-            demand = tank.vars['demand'].to_numpy()
-            if tank_name in self.ucategories['demand'].elements.keys():
-                uelement = self.ucategories['demand'].elements[tank_name]
+            b[tank_idx * T: (tank_idx + 1) * T] = tank.vars['demand'].cumsum().values.reshape(-1, 1)
+            mv = np.append(tank.min_vol[1:], tank.final_vol)
+            rhs_min[tank_idx * T: (tank_idx + 1) * T] = mv.reshape(-1, 1)
+            rhs_max[tank_idx * T: (tank_idx + 1) * T] = tank.max_vol
+            lhs_init[tank_idx * T: (tank_idx + 1) * T] = tank.initial_vol
+            rhs_final[tank_idx] = tank.final_vol
 
-                time_delta = uelement.time_affine_map
+            for element_name in self.vars_df['name'].unique():
+                element = self.sim.network.flow_elements[element_name]
+                xmin_idx, xmax_idx = self.get_x_idx(element_name)
 
-                if time_delta is None and tanks_delta is None:
-                    demand += z_dem[:, uelement.idx] * 0
-                    pass
+                if element in tank.inflows + tank.vsp_inflows + tank.v_inflows + tank.cv_inflows:
+                    flow_direction = 'in'
+                elif element in tank.outflows + tank.vsp_outflows + tank.v_outflows + tank.cv_outflows:
+                    flow_direction = 'out'
+                else:
+                    continue
 
-                elif time_delta is not None and tanks_delta is None:
-                    demand += time_delta @ z_dem[:, uelement.idx]
+                if hasattr(element, 'combs'):
+                    mat = self.cumulative_comb_matrix(element, flow_direction, param='flow')
+                else:
+                    mat = self.cumulative_not_comb_matrix(flow_direction)
 
-                elif time_delta is None and tanks_delta is not None:
-                    demand += p[uelement.idx, :]
+                lhs[tank_idx * T: (tank_idx + 1) * T, xmin_idx: xmax_idx] = mat
 
-                elif time_delta is not None and tanks_delta is not None:
-                    demand += p[uelement.idx, :] @ time_delta
+        # final_idx = [i * T - 1 for i in range(1, ntanks + 1)]
+        if affine_map is None:
+            self.model.st(lhs @ self.x <= np.squeeze(rhs_max + b - lhs_init))
+            self.model.st(lhs @ self.x >= np.squeeze(rhs_min + b - lhs_init))
+            # self.model.st(lhs[final_idx] @ self.x >= rhs_final + b[final_idx] - lhs_init[final_idx])
 
-                for t in range(self.sim.num_steps):
-                    lhs = self.mass_balance_lhs(tank, t)
-                    self.model.st((lhs - demand[:t + 1].sum() >= tank.min_vol[t]).forall(z_set))
-                    self.model.st((lhs - demand[:t + 1].sum() <= tank.max_vol).forall(z_set))
+        else:
+            z = self.model.rvar((T * ntanks), name='z_dem')
+            z_set = rso.norm(z, self.uset_type) <= self.gamma
 
-                # Final volume constraint
-                lhs = self.mass_balance_lhs(tank, self.sim.num_steps)
-                self.model.st((lhs - demand.sum() >= tank.final_vol).forall(z_set))
+            self.model.st((lhs @ self.x <= np.squeeze(rhs_max)
+                           + np.squeeze(b)
+                           + affine_map @ z
+                           - np.squeeze(lhs_init)).forall(z_set))
 
-            else:
-                for t in range(self.sim.num_steps):
-                    lhs = self.mass_balance_lhs(tank, t)
-                    self.model.st(lhs - demand[:t + 1].sum() >= tank.min_vol[t])
-                    self.model.st(lhs - demand[:t + 1].sum() <= tank.max_vol)
-                # Final volume constraint - last LHS is for t = T
-                self.model.st(lhs - demand.sum() >= tank.final_vol)
+            self.model.st((lhs @ self.x >= np.squeeze(rhs_min)
+                           + np.squeeze(b)
+                           + affine_map @ z
+                           - np.squeeze(lhs_init)).forall(z_set))
+
+    def build_mass_balance(self):
+        tanks = {tname: t for tname, t in self.sim.network.tanks.items() if tname not in self.udata['demand'].elements}
+        if tanks:
+            self.mass_balance(tanks)
+
+        utanks = {tname: t for tname, t in self.sim.network.tanks.items() if tname in self.udata['demand'].elements}
+        if utanks:
+            delta = self.udata['demand'].delta
+            self.mass_balance(utanks, affine_map=delta)
 
     def vsp_volume(self):
         operators = {'le': operator.le, 'ge': operator.ge, 'eq': operator.eq}
@@ -215,8 +256,9 @@ class RO:
             volume = row['vol']
             operator_type = row['constraint_type']
 
-            vsp = self.vars_df.loc[self.vars_df['name'] == vsp_name, 'network_entity'].values[0]
-            vsp_x = self.vars_df.loc[self.vars_df['name'] == vsp.name, 'var'].values[0]
+            vsp = self.vars_df.loc[self.vars_df['name'] == vsp_name, 'network_element'].values[0]
+            xmin_idx, xmax_idx = self.get_x_idx(vsp_name)
+            vsp_x = self.x[xmin_idx: xmax_idx]
 
             vsp.vars['aux'] = 0
             mask = ((vsp.vars.index >= start) & (vsp.vars.index <= end))
@@ -235,8 +277,9 @@ class RO:
             end = pd.to_datetime(row['end'], dayfirst=True)
             vsp_name = row['vsp']
 
-            vsp = self.vars_df.loc[self.vars_df['name'] == vsp_name, 'network_entity'].values[0]
-            vsp_x = self.vars_df.loc[self.vars_df['name'] == vsp.name, 'var'].values[0]
+            vsp = self.vars_df.loc[self.vars_df['name'] == vsp_name, 'network_element'].values[0]
+            xmin_idx, xmax_idx = self.get_x_idx(vsp_name)
+            vsp_x = self.x[xmin_idx: xmax_idx]
 
             vsp.vars['aux'] = 0
             mask = ((vsp.vars.index > start) & (vsp.vars.index < end))
@@ -261,8 +304,10 @@ class RO:
             lhs = 0
             for s in ps.elements:
                 matrix = self.comb_matrix(s, 'in', 'power')
-                x = self.vars_df.loc[self.vars_df['name'] == s.name, 'var'].values[0]
-                b = self.model.dvar(shape=x.shape, vtype='B', name=s.name + '_b')
+
+                xmin_idx, xmax_idx = self.get_x_idx(s.name)
+                x = self.x[xmin_idx: xmax_idx]
+                b = self.model.dvar(shape=xmax_idx - xmin_idx, vtype='B')
                 self.model.st(x - b <= 0)
                 lhs = lhs + matrix @ b
 
@@ -270,55 +315,23 @@ class RO:
             rhs = np.where(rhs == 'ON', row['max_power_on'], row['max_power_off'])
             self.model.st(lhs <= rhs)
 
-    def objective_func(self):
-        """
-        Δ:      affine map - a matrix defines the uncertainty set correlations. computed from cov matrix Σ = ΔΔᵀ
-        p:      a multiplication of affine map with random variable p = Δ @ z
-
-        In operation problems we have two mapping actions:
-            map correlation between time steps
-            map correlation between different elements
-
-        """
+    def objective_func(self, uflag=False):
         obj = 0
+        u_idx = []
+        if 'cost' in self.udata:
+            uflag = True
 
-        if len(self.ucategories['cost'].elements) > 0:
-            z_cost = self.model.rvar((self.sim.num_steps, len(self.ucategories['cost'].elements)), name='z_cost')
-            z_set = rso.norm(z_cost.reshape(-1), self.uset_type) <= self.gamma
-            elements_delta = self.ucategories['cost'].affine_map
-            if elements_delta is not None:
-                p = elements_delta @ z_cost.T  # (n_elements x n_elements) @ (n_elements x T) = (n_elements x T)
+        for element_name, element in self.sim.network.cost_elements.items():
+            xmin_idx, xmax_idx = self.get_x_idx(element_name)
+            obj += (element.vars['cost'].values @ self.x[xmin_idx: xmax_idx]).sum()
 
-        for i, row in self.vars_df.iterrows():
-            x = row['var']
-            c = row['cost_vec']
-            name = row['name']
-            element = row['network_entity']
+            if uflag and element_name in self.udata['cost'].elements.keys():
+                u_idx.append(range(xmin_idx, xmax_idx))
 
-            if name in self.ucategories['cost'].elements.keys():
-                if hasattr(element, 'combs'):
-                    matrix = self.comb_matrix(element, 'in')
-                else:
-                    matrix = self.not_comb_matrix('in')
-
-                uelement = self.ucategories['cost'].elements[name]
-                time_delta = uelement.time_affine_map
-
-                if time_delta is None and elements_delta is None:
-                    ucost = 0
-
-                elif time_delta is not None and elements_delta is None:
-                    ucost = time_delta @ z_cost[:, uelement.idx] @ matrix @ x
-
-                elif time_delta is None and elements_delta is not None:
-                    ucost = p[uelement.idx, :] @ matrix @ x
-
-                elif time_delta is not None and elements_delta is not None:
-                    ucost = p[uelement.idx, :] @ time_delta @ matrix @ x
-
-                obj += ucost
-
-            obj += (c @ x).sum()
+        if uflag > 0:
+            delta = self.udata['cost'].delta
+            z = self.model.rvar(delta.shape[0], name='z_cost')
+            z_set = rso.norm(z, self.uset_type) <= self.gamma
 
         self.model.minmax(obj, z_set)
 
@@ -330,10 +343,10 @@ class RO:
         return obj, x, status
 
     def get_results(self):
-        for i, row in self.vars_df.iterrows():
-            x = row['var']
-            element = row['network_entity']
-            element.vars['value'] = x.get()
+        res = self.x.get()
+        for name in self.vars_df['name'].unique():
+            xmin_idx, xmax_idx = self.get_x_idx(name)
+            self.sim.network.flow_elements[name].vars['value'] = res[xmin_idx: xmax_idx]
 
         self.tanks_balance()
 
@@ -363,39 +376,3 @@ class RO:
             df['volume'] = t.initial_vol + (df['inflow'] + df['demand']).cumsum()
             t.vars['value'] = df['volume']
             t.vars['inflow'] = df['inflow']
-
-
-class UElement:
-    def __init__(self, ucat, name, idx, element_type, time_std, std, time_corr):
-        self.ucat = ucat
-        self.name = name
-        self.idx = idx
-        self.element_type = element_type
-        self.time_std = time_std
-        self.std = std
-        self.time_corr = time_corr
-
-        self.time_affine_map = self.get_time_affine_map()
-
-    def get_time_affine_map(self):
-        if self.time_std is not None and self.time_corr is not None:
-            return uutils.uset_from_std(self.time_std, self.time_corr)
-        else:
-            return
-
-
-class UCategory:
-    def __init__(self, name, elements: dict, elements_correlation):
-        self.name = name
-        self.elements = elements
-        self.elements_correlation = elements_correlation
-
-        self.affine_map = self.get_elements_affine_map()
-
-    def get_elements_affine_map(self):
-        std = [e.std for ename, e in self.elements.items()]
-        if self.elements_correlation is not None:
-            return uutils.uset_from_std(std, self.elements_correlation)
-        else:
-            return
-
