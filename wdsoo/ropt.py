@@ -316,22 +316,37 @@ class RO:
             self.model.st(lhs <= rhs)
 
     def objective_func(self, uflag=False):
+        T = self.sim.num_steps
+        z_set = []
         obj = 0
-        u_idx = []
+
         if 'cost' in self.udata:
-            uflag = True
+            u_elements = {e_name: e for e_name, e in self.sim.network.cost_elements.items()
+                         if e_name in self.udata['cost'].elements}
+            d_elements = {e_name: e for e_name, e in self.sim.network.cost_elements.items()
+                         if e_name not in self.udata['cost'].elements}
 
-        for element_name, element in self.sim.network.cost_elements.items():
-            xmin_idx, xmax_idx = self.get_x_idx(element_name)
-            obj += (element.vars['cost'].values @ self.x[xmin_idx: xmax_idx]).sum()
+            A = np.zeros((len(u_elements) * T, self.x.shape[0]))
+            for i, (element_name, element) in enumerate(u_elements.items()):
+                xmin_idx, xmax_idx = self.get_x_idx(element_name)
+                if hasattr(element, 'combs'):
+                    mat = self.comb_matrix(element, 'in')
+                else:
+                    mat = self.not_comb_matrix('in')
 
-            if uflag and element_name in self.udata['cost'].elements.keys():
-                u_idx.append(range(xmin_idx, xmax_idx))
-
-        if uflag > 0:
+            A[i * T: (i + 1) * T, xmin_idx: xmax_idx] = mat
             delta = self.udata['cost'].delta
             z = self.model.rvar(delta.shape[0], name='z_cost')
             z_set = rso.norm(z, self.uset_type) <= self.gamma
+            obj += delta @ z @ A @ self.x
+
+        else:
+            d_elements = {e_name: e for e_name, e in self.sim.network.cost_elements.items()}
+
+        # Do anyway - deterministic costs
+        for element_name, element in self.sim.network.cost_elements.items():
+            xmin_idx, xmax_idx = self.get_x_idx(element_name)
+            obj += (element.vars['cost'].values @ self.x[xmin_idx: xmax_idx]).sum()
 
         self.model.minmax(obj, z_set)
 
