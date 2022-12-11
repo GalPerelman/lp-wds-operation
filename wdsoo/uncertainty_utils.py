@@ -9,20 +9,18 @@ class Ufile:
     def __init__(self, path):
         self.path = path
 
-    def add_element(self):
-        pass
+    def read(self):
+        with open(self.path, 'r') as file:
+            return json.load(file)
 
-    def add_ucategory(self):
-        pass
+    def write(self, data, output):
+        with open(output, 'w') as file:
+            json.dump(data, file, indent=4)
 
-    def edit_element(self):
-        pass
-
-    def edit_category(self):
-        pass
-
-    def remove_element(self):
-        pass
+    def remove_category(self, cat, output):
+        data = self.read()
+        del data[cat]
+        self.write(data, output)
 
 
 class UCategory:
