@@ -181,6 +181,8 @@ class RO:
     def mass_balance(self, tanks: dict, affine_map=None):
         T = self.sim.num_steps
         ntanks = len(tanks)
+        if ntanks == 0:
+            return
 
         lhs = np.zeros((ntanks * T, self.x.shape[0]), dtype=float)
         lhs_init = np.zeros((ntanks * T, 1), dtype=float)
@@ -225,7 +227,6 @@ class RO:
         else:
             z = self.model.rvar((T * ntanks), name='z_dem')
             z_set = rso.norm(z, self.uset_type) <= self.gamma
-
             self.model.st((lhs @ self.x <= np.squeeze(rhs_max)
                            + np.squeeze(b)
                            + affine_map @ z
@@ -237,14 +238,15 @@ class RO:
                            - np.squeeze(lhs_init)).forall(z_set))
 
     def build_mass_balance(self):
-        tanks = {tname: t for tname, t in self.sim.network.tanks.items() if tname not in self.udata['demand'].elements}
-        if tanks:
-            self.mass_balance(tanks)
-
-        utanks = {tname: t for tname, t in self.sim.network.tanks.items() if tname in self.udata['demand'].elements}
-        if utanks:
+        if 'demand' in self.udata:
+            utanks = {name: t for name, t in self.sim.network.tanks.items() if name in self.udata['demand'].elements}
             delta = self.udata['demand'].delta
             self.mass_balance(utanks, affine_map=delta)
+        else:
+            utanks = {}
+
+        dtanks = {name: t for name, t in self.sim.network.tanks.items() if name not in utanks}
+        self.mass_balance(dtanks)
 
     def vsp_volume(self):
         operators = {'le': operator.le, 'ge': operator.ge, 'eq': operator.eq}

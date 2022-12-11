@@ -399,7 +399,7 @@ class LP:
         status = self.solution.primal()
         objective = self.solution.objectiveValue
         self.get_results()
-        print(self.solution.getStatusString())
+
         return status, objective, time.time() - self.sim.start_time
 
     def solve_integer(self):
@@ -436,8 +436,8 @@ class LP:
             vol = sum(w.vars['flow'] * w.vars['value'])
             energy = sum(w.vars['flow'] * w.vars['se'] * w.vars['value'])
             cost = sum(w.vars['cost'] * w.vars['value'])
-            w_res = pd.DataFrame({'name': w.name, 'vol': vol, 'energy': energy, 'cost': cost}, index=[len(sim_results)])
-            sim_results = pd.concat([sim_results, w_res])
+            w_res = pd.DataFrame({'name': w.name, 'vol': vol, 'energy': energy, 'cost': cost}, index=[len(df)])
+            df = pd.concat([df, w_res])
 
         for cv_name, cv in self.sim.network.control_valves.items():
             cv.vars['value'] = self.sim.lp_model.solution.primalVariableSolution[cv.name + '_x']
