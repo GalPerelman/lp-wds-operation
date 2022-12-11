@@ -1,11 +1,9 @@
 import os
 import numpy as np
-from numpy.random import default_rng
 import matplotlib.pyplot as plt
 
 # local imports
 from . import uncertainty_utils as uutils
-from .uncertainty_utils import UCategory, UElement
 
 np.set_printoptions(threshold=np.inf)
 
@@ -19,7 +17,7 @@ class MC:
 
         self.t = self.sim.num_steps
         self.epsilon = 0.0001
-        self.udata = uutils.init_uncertainty(os.path.join(self.sim.data_folder, 'uncertainty', 'uncertainty.json'))
+        self.udata = uutils.init_uncertainty(os.path.join(self.sim.data_folder, 'uncertainty', 'uncertainty_backup.json'))
         self.num_tanks = len(self.sim.network.tanks)
 
     def run(self, sample_function, plot=False):
@@ -87,14 +85,8 @@ class MC:
         n_violations = np.array([np.ones(n_violations.shape), n_violations]).min(axis=0)  # 1 if any violation in the sample
         return n_violations
 
-    @staticmethod
-    def constant_correlation_mat(size, rho):
-        mat = np.ones((size, size)) * rho
-        diag = np.diag_indices(size)
-        mat[diag] = 1.
-        return mat
-
     def normal(self):
+        # To clean in the future
         demands = np.array([t.vars['demand'].values for t in self.sim.network.tanks.values()])
         demands = demands.T
         time_steps, n_tanks = demands.shape
@@ -121,20 +113,22 @@ class MC:
         return sample, demands.T
 
     def uniform_sample(self):
+        rng = np.random.default_rng()
         demands = np.array([t.vars['demand'].values for t in self.sim.network.tanks.values()])
         demands = demands.T
-        zeros_idx = np.where(~demands.all(axis=0))
+        t, n_tanks = demands.shape
+        non_zero_idx = np.argwhere(demands.any(axis=0)).flatten()
 
-        zeta = np.random.normal(0, 1, size=(demands.shape[0], demands.shape[1], self.n_sim))
-        y = np.apply_along_axis(lambda x: x / np.sqrt(np.sum(x ** 2)), axis=0, arr=zeta) * self.gamma
+        nominal = demands.T.reshape(-1, 1)
+        lb = nominal * 0.75
+        ub = nominal * 1.25
 
-        cov = uutils.observations_cov(demands, self.rho)
-        d = np.linalg.cholesky(cov)
+        z = np.random.uniform(low=-1, high=1, size=(nominal.shape[0], self.n_sim))
+        z = z * (ub - lb)
+        sample = np.zeros((t * n_tanks, self.n_sim))
+        for i, idx in enumerate(list(non_zero_idx)):
+            sample[idx * t: (idx + 1) * t] = nominal[idx * t: (idx + 1) * t] + z[i * t: (i + 1) * t]
 
-        sample = d @ y
-        sample = sample.reshape(self.n_sim, demands.shape[0], demands.shape[1])
-        sample = demands + sample
-        sample[:, :, zeros_idx] = 0
         return sample, demands.T
 
     def multivariate_sample(self):
