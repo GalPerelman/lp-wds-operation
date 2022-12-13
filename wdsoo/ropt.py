@@ -227,6 +227,7 @@ class RO:
         else:
             z = self.model.rvar((T * ntanks), name='z_dem')
             z_set = rso.norm(z, self.uset_type) <= self.gamma
+
             self.model.st((lhs @ self.x <= np.squeeze(rhs_max)
                            + np.squeeze(b)
                            + affine_map @ z
@@ -317,16 +318,14 @@ class RO:
             rhs = np.where(rhs == 'ON', row['max_power_on'], row['max_power_off'])
             self.model.st(lhs <= rhs)
 
-    def objective_func(self, uflag=False):
+    def objective_func(self):
         T = self.sim.num_steps
         z_set = []
         obj = 0
 
         if 'cost' in self.udata:
             u_elements = {e_name: e for e_name, e in self.sim.network.cost_elements.items()
-                         if e_name in self.udata['cost'].elements}
-            d_elements = {e_name: e for e_name, e in self.sim.network.cost_elements.items()
-                         if e_name not in self.udata['cost'].elements}
+                          if e_name in self.udata['cost'].elements}
 
             A = np.zeros((len(u_elements) * T, self.x.shape[0]))
             for i, (element_name, element) in enumerate(u_elements.items()):
@@ -336,14 +335,12 @@ class RO:
                 else:
                     mat = self.not_comb_matrix('in')
 
-            A[i * T: (i + 1) * T, xmin_idx: xmax_idx] = mat
+                A[i * T: (i + 1) * T, xmin_idx: xmax_idx] = mat
+
             delta = self.udata['cost'].delta
             z = self.model.rvar(delta.shape[0], name='z_cost')
             z_set = rso.norm(z, self.uset_type) <= self.gamma
             obj += delta @ z @ A @ self.x
-
-        else:
-            d_elements = {e_name: e for e_name, e in self.sim.network.cost_elements.items()}
 
         # Do anyway - deterministic costs
         for element_name, element in self.sim.network.cost_elements.items():

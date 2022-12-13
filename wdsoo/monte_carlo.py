@@ -5,19 +5,19 @@ import matplotlib.pyplot as plt
 # local imports
 from . import uncertainty_utils as uutils
 
-np.set_printoptions(threshold=np.inf)
+np.set_printoptions(threshold=np.inf, linewidth=500)
+np.set_printoptions(suppress=True)
 
 
 class MC:
-    def __init__(self, sim, n_sim, gamma, rho):
+    def __init__(self, sim, n_sim, ufile_path):
         self.sim = sim
         self.n_sim = n_sim
-        self.gamma = gamma
-        self.rho = rho
+        self.ufile_path = ufile_path
 
         self.t = self.sim.num_steps
         self.epsilon = 0.0001
-        self.udata = uutils.init_uncertainty(os.path.join(self.sim.data_folder, 'uncertainty', 'uncertainty_backup.json'))
+        self.udata = uutils.init_uncertainty(self.ufile_path)
         self.num_tanks = len(self.sim.network.tanks)
 
     def run(self, sample_function, plot=False):
@@ -27,8 +27,8 @@ class MC:
         for i, (tank_name, tank) in enumerate(self.sim.network.tanks.items()):
             tank_inflow = self.sim.network.tanks[tank_name].vars['inflow'].values.reshape(-1, 1)
 
-            res = (tank.initial_vol + (tank_inflow - sample[i * self.t: (i + 1) * self.t, :]).cumsum(axis=0))
-            tank_violations = self.get_violations_for_tank(tank, res)
+            sample_d = (tank.initial_vol + (tank_inflow - sample[i * self.t: (i + 1) * self.t, :]).cumsum(axis=0))
+            tank_violations = self.get_violations_for_tank(tank, sample_d)
             sim_violations.append(tank_violations)
 
         sim_violations = np.vstack(sim_violations)
@@ -36,7 +36,7 @@ class MC:
         sim_violations = np.array([np.ones(sim_violations.shape), sim_violations]).min(axis=0)
         if plot:
             self.plot(sample, sum(sim_violations)/self.n_sim)
-        return sum(sim_violations)/self.n_sim
+        return sum(sim_violations)/self.n_sim, sample_d, sim_violations
 
     def plot(self, sample, vr):
         fig, axes = plt.subplots(nrows=2, ncols=int(len(self.sim.network.tanks) / 2 + 1), sharex=True, figsize=(12, 6))
@@ -50,12 +50,13 @@ class MC:
             res = np.vstack([np.ones((1, self.n_sim)) * tank.initial_vol, res])
             axes[i].set_title(tank_name)
             axes[i].plot(res, c='C0', alpha=0.4)
-            axes[i].plot(range(len(tank.vars) + 1), list(tank.min_vol) + [tank.final_vol], c='grey', alpha=0.8)
+            axes[i].plot(range(len(tank.vars) + 1), list(tank.min_vol) + [tank.final_vol],
+                         c='r', alpha=0.6, linestyle='--', zorder=5)
             axes[i].hlines(tank.max_vol, xmin=0, xmax=24, color='grey', zorder=5, alpha=0.8)
             axes[i].plot(range(len(tank.vars) + 1), [tank.initial_vol] + tank.vars['value'].to_list(), c='k')
             axes[i].grid()
 
-        plt.suptitle(f'Monte Carlo simulations - Violations rate: {vr*100:.0f}')
+        plt.suptitle(f'Monte Carlo simulations - Violations rate: {vr*100:.0f}%')
         plt.tight_layout()
 
     def plot_sample(self, sample, demands):
@@ -65,7 +66,7 @@ class MC:
 
         for i, (tank_name, tank) in enumerate(self.sim.network.tanks.items()):
             axes[i].set_title(tank_name)
-            axes[i].plot(sample[i * t: (i + 1) * t, :], c='C0', alpha=0.4)
+            axes[i].plot(sample[i * t: (i + 1) * t, :], c='C0', alpha=0.2)
             axes[i].plot(demands[i, :], c='k')
             axes[i].grid()
 
@@ -78,11 +79,11 @@ class MC:
         n_min_vol = np.count_nonzero(z_min_vol == 1, axis=0)
         n_min_vol = np.array([np.ones(n_min_vol.shape), n_min_vol]).min(axis=0)
 
-        z_final = np.where(- res[-1, :] + tank.final_vol <= self.epsilon, 0, 1)  # 1 for constraint violation, 0 otherwise
+        z_final = np.where(- res[-1, :] + tank.final_vol <= self.epsilon, 0, 1)  # 1 for violation, 0 otherwise
 
         violations = np.vstack([n_max_vol, n_min_vol, z_final])  # stack all tanks violations
         n_violations = np.count_nonzero(violations == 1, axis=0)  # counts number of violations in each sample
-        n_violations = np.array([np.ones(n_violations.shape), n_violations]).min(axis=0)  # 1 if any violation in the sample
+        n_violations = np.array([np.ones(n_violations.shape), n_violations]).min(axis=0)  # 1 if any violation
         return n_violations
 
     def normal(self):
@@ -92,7 +93,6 @@ class MC:
         time_steps, n_tanks = demands.shape
         non_zero_idx = np.argwhere(demands.any(axis=0)).flatten()
         demands = demands[:, demands.all(axis=0)]
-        dem_tanks = demands.shape[1]
 
         zeta = np.random.normal(0, 1, size=(demands.shape[0], demands.shape[1], self.n_sim))
         cov = uutils.observations_cov(demands, self.rho)
@@ -113,21 +113,20 @@ class MC:
         return sample, demands.T
 
     def uniform_sample(self):
-        rng = np.random.default_rng()
         demands = np.array([t.vars['demand'].values for t in self.sim.network.tanks.values()])
         demands = demands.T
         t, n_tanks = demands.shape
         non_zero_idx = np.argwhere(demands.any(axis=0)).flatten()
 
         nominal = demands.T.reshape(-1, 1)
-        lb = nominal * 0.75
-        ub = nominal * 1.25
+        lb = nominal * 0.9
+        ub = nominal * 1.1
 
         z = np.random.uniform(low=-1, high=1, size=(nominal.shape[0], self.n_sim))
         z = z * (ub - lb)
         sample = np.zeros((t * n_tanks, self.n_sim))
         for i, idx in enumerate(list(non_zero_idx)):
-            sample[idx * t: (idx + 1) * t] = nominal[idx * t: (idx + 1) * t] + z[i * t: (i + 1) * t]
+            sample[idx * t: (idx + 1) * t] = nominal[idx * t: (idx + 1) * t] + z[idx * t: (idx + 1) * t]
 
         return sample, demands.T
 
@@ -141,8 +140,8 @@ class MC:
         sigma = self.udata['demand'].sigma
         z = rng.multivariate_normal(np.zeros(sigma.shape[0]), sigma, size=self.n_sim, method='cholesky').T
 
-        z = np.random.normal(0, 1, size=((sigma.shape[0], self.n_sim)))
-        z = self.udata['demand'].delta @ z
+        # z = np.random.normal(0, 1, size=((sigma.shape[0], self.n_sim)))
+        # z = self.udata['demand'].delta @ z
 
         nominal = demands.T.reshape(-1, 1)
         sample = np.zeros((t * n_tanks, self.n_sim))
@@ -165,7 +164,6 @@ class MC:
 
         nominal = demands.T.reshape(-1, 1)
         sample = np.zeros((t * n_tanks, self.n_sim))
-
         for i, idx in enumerate(list(non_zero_idx)):
             sample[idx * t: (idx + 1) * t] = nominal[idx * t: (idx + 1) * t] + z[i * t: (i + 1) * t]
 

@@ -8,19 +8,18 @@ from typing import Union
 class Ufile:
     def __init__(self, path):
         self.path = path
+        self.data = self.read()
 
     def read(self):
         with open(self.path, 'r') as file:
             return json.load(file)
 
-    def write(self, data, output):
+    def write(self, output):
         with open(output, 'w') as file:
-            json.dump(data, file, indent=4)
+            json.dump(self.data, file, indent=4)
 
-    def remove_category(self, cat, output):
-        data = self.read()
-        del data[cat]
-        self.write(data, output)
+    def remove_category(self, cat):
+        del self.data[cat]
 
 
 class UCategory:
@@ -66,7 +65,7 @@ class UCategory:
                     mat[i*t: i*t+t, j*t: j*t+t] = np.multiply(ei.std, ej.std) * r
 
         if not is_pd(mat):
-            print(f'Warning: {self.name} COV matrix not positive defined')
+            # print(f'Warning: {self.name} COV matrix not positive defined')
             mat = nearest_positive_defined(mat)
         return mat
 
