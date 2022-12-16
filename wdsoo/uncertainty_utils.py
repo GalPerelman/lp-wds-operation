@@ -21,6 +21,12 @@ class Ufile:
     def remove_category(self, cat):
         del self.data[cat]
 
+    def edit_element(self, category: str, element: str, feature, value):
+        self.data[category]['elements'][element][feature] = value
+
+    def edit_category(self, category: str, feature, value):
+        self.data[category][feature] = value
+
 
 class UCategory:
     def __init__(self, name, elements: dict, elements_correlation):
