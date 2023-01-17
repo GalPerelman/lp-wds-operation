@@ -1,12 +1,15 @@
 import numpy as np
 import pandas as pd
 import math
+import matplotlib as mpl
 import matplotlib.pyplot as plt
 from matplotlib import dates as mdates
+from matplotlib.colors import TwoSlopeNorm
 from matplotlib.ticker import FormatStrFormatter
 from matplotlib import ticker as mtick
-
-from . import utils
+from matplotlib.lines import Line2D
+import matplotlib.patheffects as PathEffects
+import pylustrator
 
 
 class SimGraphs:
@@ -39,7 +42,8 @@ class SimGraphs:
 
         return ax
 
-    def tank(self, tank, ax=None, linestyle='solid', level=False, color='k', ylabel=False, label=False, background=True):
+    def tank(self, tank, ax=None, linestyle='solid', level=False, color='k', ylabel=False, label=False,
+             background=True):
         if ax is None:
             fig, ax = plt.subplots()
 
@@ -59,10 +63,10 @@ class SimGraphs:
         if not label:
             label = tank.name
         ax.plot(x0, y0, 'r', marker='o', markersize=4)
-        ax.plot(x, y, marker='o',color=color,  markersize=4, markerfacecolor='none', linestyle=linestyle, label=label)
+        ax.plot(x, y, marker='o', color=color, markersize=4, markerfacecolor='none', linestyle=linestyle, label=label)
 
         # ax.plot(tank.vars.index, tank.vars['demand'], marker='o', markersize=4, markerfacecolor='none')
-        ax.plot(x, tank.vars['min_vol'].to_list() + [tank.final_vol], linewidth=1, c='k')
+        # ax.plot(x, tank.vars['min_vol'].to_list() + [tank.final_vol], linewidth=1, c='k')
         ax.grid()
         if ylabel:
             ax.set_ylabel(ylabel)
@@ -73,10 +77,23 @@ class SimGraphs:
 
         if background:
             ax = self.tariff_background(ax)
+
+            # Legend
+            marksize = 8
+            font_size = 9
+            legend_elements = [Line2D([0], [0], marker='o', markerfacecolor=(255 / 255, 0, 0, 0.2), label='High',
+                                      markeredgecolor=(0, 0, 0), linewidth=0, markeredgewidth=0.4, markersize=marksize),
+                               Line2D([2], [0], marker='o', markerfacecolor=(0, 128 / 255, 0, 0.2), label='Low',
+                                      markeredgecolor=(0, 0, 0), linewidth=0, markeredgewidth=0.4, markersize=marksize)]
+
+            leg = ax.legend(handles=legend_elements, title="Electricity tariff", fontsize=font_size)
+            leg.set_title('Electricity tariff', prop={'size': font_size})
+            leg._legend_box.align = "left"
+
         return ax
 
     def all_tanks(self, level=False, sharey=False):
-        n_cols = int(len(self.sim.network.tanks)/2 + 1)
+        n_cols = int(len(self.sim.network.tanks) / 2 + 1)
         fig, axes = plt.subplots(nrows=self.n_rows, ncols=n_cols, sharex=True, sharey=sharey, figsize=(12, 6))
         axes = axes.ravel()
 
@@ -197,7 +214,7 @@ class SimGraphs:
         return ax
 
     def all_pressure_zones(self):
-        fig, axes = plt.subplots(nrows=2, ncols=int(len(self.sim.network.tanks)/2), sharex=True, figsize=(12, 6))
+        fig, axes = plt.subplots(nrows=2, ncols=int(len(self.sim.network.tanks) / 2), sharex=True, figsize=(12, 6))
         axes = axes.ravel()
 
         for i, (t_name, t) in enumerate(self.sim.network.tanks.items()):
@@ -218,3 +235,141 @@ class SimGraphs:
 
         plt.tight_layout()
         plt.show()
+
+    def station_gantt(self, station, ax):
+        if ax is None:
+            fig, ax = plt.subplots()
+
+        df = station.vars.copy()
+        df.index = df.index.droplevel(1)
+        # df = df[df['value'] != 0]
+
+        cols_to_drop = ['flow', 'se', 'power', 'efficiency', 'head', 'num_units', 'tariff', 'step_size',
+                        'group', 'eps', 'cost', 'availability', 'dt']
+        cols_to_drop = list(set(cols_to_drop) & set(df.columns))
+        df.drop(cols_to_drop, axis=1, inplace=True)
+        df = df.replace({'ON': 1, 'OFF': 0})
+
+        units_cols = [col for col in df.columns if col != 'value']
+        df = df.loc[:, units_cols].multiply(df['value'], axis='index')
+        df = df.groupby(level=0).sum()
+        df = df.reindex(sorted(df.columns), axis=1)
+
+        num_units = len(units_cols)
+        pe = [PathEffects.Stroke(linewidth=6, foreground='black'),
+              PathEffects.Stroke(foreground='black'),
+              PathEffects.Normal()]
+
+        for i, unit in enumerate(units_cols):
+            temp = df[[unit]].copy()
+            temp.index = range(len(temp))
+            temp.loc[:, 'start'] = temp.index
+            temp.loc[:, 'end'] = temp['start'] + pd.Series(temp[unit])
+            ax.hlines([i], temp.index.min(), temp.index.max() + 1, linewidth=5, color='w', path_effects=pe)
+            ax.hlines(np.repeat(i, len(temp)), temp['end'], temp['start'], linewidth=5, colors='black')
+
+        temp = self.sim.network.wells['W1'].vars.copy()
+        temp.index = range(len(temp))
+        temp.loc[:, 'start'] = temp.index
+        temp.loc[:, 'end'] = temp['start'] + pd.Series(temp['value'])
+        ax.hlines([i + 1], temp.index.min(), temp.index.max() + 1, linewidth=5, color='w', path_effects=pe)
+        ax.hlines(np.repeat(i + 1, len(temp)), temp['end'], temp['start'], linewidth=5, colors='black')
+
+        ax.xaxis.grid(True)
+        ax.set_yticks([i for i in range(len(df.columns) + 1)])
+        ax.set_yticklabels(['Pump 1', 'Pump 2', 'Well'])
+        return ax
+
+
+def correlation_matrix(mat, names=False, norm=False):
+    if norm:
+        mat = (mat - mat.min()) / (mat.max() - mat.min())
+
+    hex_list = ["023047", "126782", "219ebc", "ffffff", "DC7F2E", "CE6550", "AF4831"]
+    hex_list = ["ffffff","8ecae6","046B9F","fdf4b0","ffbf1f","b33005"]
+    hex_list = ["#" + _ for _ in hex_list]
+    cmap = get_continuous_cmap(hex_list)
+
+    fig, ax = plt.subplots()
+    mat_norm = max(abs(mat.min()), abs(mat.max()))
+    im = plt.imshow(mat, cmap=cmap, vmin=0, vmax=mat_norm)
+    # plt.cm.RdBu_r
+    ax = plt.gca()
+
+
+    ax.tick_params(which='minor', bottom=False, left=False)
+    cbar = plt.colorbar(im, ticks=mtick.AutoLocator())
+
+    # Major ticks
+    ax.set_xticks(np.arange(-0.5, mat.shape[0], 24))
+    ax.set_yticks(np.arange(-0.5, mat.shape[0], 24))
+    ax.set_xticklabels(np.arange(0, mat.shape[0] + 24, 24))
+    ax.set_yticklabels(np.arange(0, mat.shape[0] + 24, 24))
+
+    # Gridlines based on minor ticks
+    ax.grid(which='major', color='k', linestyle='-', linewidth=1)
+    ax.grid(which='minor', color='k', linestyle='-', linewidth=0.5, alpha=0.4)
+
+    if names:
+        ax.set_xticks(np.arange(-0.5, mat.shape[0], 1), minor=True)
+        ax.set_yticks(np.arange(-0.5, mat.shape[0], 1), minor=True)
+
+        for i, name in enumerate(names):
+            fig.text(0.098 + 0.115 * (i + 1), 0.04, name, ha='center')
+            fig.text(0.06, 0.06 + 0.155 * (i + 1), names[-(i + 1)], va='center', rotation='vertical')
+            # fig.text(0.3 + 0.12 * (i + 1), 0.04, name, ha='center')
+            # fig.text(0.06, 0.3 + 0.12 * (i + 1), names[-(i + 1)], va='center', rotation='vertical')
+    else:
+        ax.set_xticks(np.arange(-0.5, mat.shape[0], 1), minor=True)
+        ax.set_yticks(np.arange(-0.5, mat.shape[0], 1), minor=True)
+        ax.set_xlabel('Time (Hr)')
+        ax.set_ylabel('Time (Hr)')
+
+    plt.subplots_adjust(top=0.9, bottom=0.13, left=0.055, right=0.9, hspace=0.2, wspace=0.2)
+    plt.show()
+
+
+def hex_to_rgb(value):
+    '''
+    Converts hex to rgb colours
+    value: string of 6 characters representing a hex colour.
+    Returns: list length 3 of RGB values'''
+    value = value.strip("#")  # removes hash symbol if present
+    lv = len(value)
+    return tuple(int(value[i:i + lv // 3], 16) for i in range(0, lv, lv // 3))
+
+
+def rgb_to_dec(value):
+    """
+    Converts rgb to decimal colours (i.e. divides each value by 256)
+    value: list (length 3) of RGB values
+    Returns: list (length 3) of decimal values
+    """
+    return [v / 256 for v in value]
+
+
+def get_continuous_cmap(hex_list, float_list=None):
+    """
+        creates and returns a color map that can be used in heat map figures.
+        If float_list is not provided, colour map graduates linearly between each color in hex_list.
+        If float_list is provided, each color in hex_list is mapped to the respective location in float_list.
+
+        Parameters
+        ----------
+        hex_list: list of hex code strings
+        float_list: list of floats between 0 and 1, same length as hex_list. Must start with 0 and end with 1.
+
+        Returns color map
+    """
+    rgb_list = [rgb_to_dec(hex_to_rgb(i)) for i in hex_list]
+    if float_list:
+        pass
+    else:
+        float_list = list(np.linspace(0, 1, len(rgb_list)))
+
+    cdict = dict()
+    for num, col in enumerate(['red', 'green', 'blue']):
+        col_list = [[float_list[i], rgb_list[i][num], rgb_list[i][num]] for i in range(len(float_list))]
+        cdict[col] = col_list
+    cmp = mpl.colors.LinearSegmentedColormap('my_cmp', segmentdata=cdict, N=256)
+    return cmp
