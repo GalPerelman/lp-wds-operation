@@ -17,9 +17,9 @@ CLP_STATUS = {-1: 'unknown', 0: 'OPTIMAL', 1: 'primal infeasible', 2: 'dual infe
 
 
 class RO:
-    def __init__(self, sim, gamma, uset_type):
+    def __init__(self, sim, robustness: dict, uset_type):
         self.sim = sim
-        self.gamma = gamma
+        self.robustness = robustness
         self.uset_type = uset_type
 
         self.udata = uutils.init_uncertainty(os.path.join(self.sim.data_folder, 'uncertainty', 'uncertainty.json'))
@@ -226,8 +226,7 @@ class RO:
 
         else:
             z = self.model.rvar((T * ntanks), name='z_dem')
-            z_set = rso.norm(z, self.uset_type) <= self.gamma
-
+            z_set = rso.norm(z, self.uset_type) <= self.robustness['demand']
             self.model.st((lhs @ self.x <= np.squeeze(rhs_max)
                            + np.squeeze(b)
                            + affine_map @ z
@@ -339,7 +338,7 @@ class RO:
 
             delta = self.udata['cost'].delta
             z = self.model.rvar(delta.shape[0], name='z_cost')
-            z_set = rso.norm(z, self.uset_type) <= self.gamma
+            z_set = rso.norm(z, self.uset_type) <= self.robustness['cost']
             obj += delta @ z @ A @ self.x
 
         # Do anyway - deterministic costs
