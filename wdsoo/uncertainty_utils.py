@@ -4,6 +4,8 @@ import numpy as np
 import pandas as pd
 from typing import Union
 
+from . import graphs
+
 
 class Ufile:
     def __init__(self, path):
@@ -34,7 +36,6 @@ class UCategory:
         self.elements = elements
         self.elements_correlation = elements_correlation
         self.corr_mat = self.get_corr_matrix()
-
         self.elements_dim = self.validate_dimensions()
         self.sigma = self.construct_matrix()  # Equivalent to cov matrix
         self.delta = np.linalg.cholesky(self.sigma)  # Affine mapping matrix
@@ -48,11 +49,13 @@ class UCategory:
                     raise Exception("Correlation matrix is not symmetric")
                 else:
                     return self.elements_correlation
+        if self.elements_correlation is None:
+            return np.zeros((len(self.elements), len(self.elements)))
 
     def validate_dimensions(self):
-        l = [len(e.std) for e_name, e in self.elements.items()]
-        if [l[0]]*len(l) == l:
-            return l[0]
+        elements_dim = [len(e.std) for e_name, e in self.elements.items()]
+        if [elements_dim[0]] * len(elements_dim) == elements_dim:
+            return elements_dim[0]
         else:
             raise Exception("Uncertainty std dimensions not valid")
 
@@ -68,10 +71,11 @@ class UCategory:
                     continue
                 else:
                     r = self.corr_mat[i, j]
-                    mat[i*t: i*t+t, j*t: j*t+t] = np.multiply(ei.std, ej.std) * r
+                    np.fill_diagonal(mat[i*t: i*t+t, j*t: j*t+t], np.multiply(ei.std, ej.std) * r)
 
+        w, v = np.linalg.eigh(mat)
         if not is_pd(mat):
-            # print(f'Warning: {self.name} COV matrix not positive defined')
+            print(f'Warning: {self.name} COV matrix not positive defined')
             mat = nearest_positive_defined(mat)
         return mat
 
@@ -86,7 +90,24 @@ class UElement:
         self.corr = corr
 
         if self.std is not None:
-            self.cov = build_cov_from_std(self.std, self.corr)
+            self.time_corr = self.get_time_corr()
+            self.cov = build_cov_from_std(self.std, self.time_corr)
+
+    def get_time_corr(self):
+        r = np.zeros((len(self.std), len(self.std)))
+        for i in range(len(self.std)):
+            for j in range(len(self.std) - i):
+
+                if self.corr == 0:
+                    rr = 0
+                else:
+                    # rr = (1 - 0.5 * j * self.corr)  #  Linear decline correlation
+                    # rr = (1 - np.sin(j*2*np.pi/(len(self.std)*2)) * self.corr)  # sinusoidal correlation
+                    rr = np.exp(- j * self.corr)  # Exponential decline
+
+                r[i, i + j] = rr
+                r[j + i, i] = rr
+        return r
 
 
 def init_uncertainty(udata_path: str):
@@ -102,7 +123,11 @@ def init_uncertainty(udata_path: str):
                     cat_elements[e_name] = ue
 
             if len(cat_elements) > 0:
-                uc = UCategory(ucat, cat_elements, np.array(ucat_data['elements_correlation']))
+                if ucat_data['elements_correlation'] is not None:
+                    cat_corr = np.array(ucat_data['elements_correlation'])
+                else:
+                    cat_corr = None
+                uc = UCategory(ucat, cat_elements, cat_corr)
                 ucategories[ucat] = uc
 
     return ucategories
@@ -115,14 +140,14 @@ def constant_correlation_mat(size, rho):
     return mat
 
 
-def build_cov_from_std(std, rho: Union[float, np.array] = 0):
+def build_cov_from_std(std, rho: Union[int, float, np.array] = 0):
     n = len(std)
     sigma = np.zeros((n, n))
     np.fill_diagonal(sigma, std)
 
     if isinstance(rho, (int, float)):
         corr = constant_correlation_mat(n, rho)
-    elif isinstance(rho, np.array):
+    elif isinstance(rho, np.ndarray):
         corr = rho
 
     cov = sigma @ corr @ sigma
@@ -177,41 +202,36 @@ def validate_symmetric(mat):
         return False
 
 
-def nearest_positive_defined(A):
+def nearest_positive_defined(mat):
     """
     source: https://stackoverflow.com/questions/43238173/python-convert-matrix-to-positive-semi-definite
     """
+    b = (mat + mat.T) / 2
+    _, s, v = np.linalg.svd(b)
 
-    B = (A + A.T) / 2
-    _, s, V = np.linalg.svd(B)
+    h = np.dot(v.T, np.dot(np.diag(s), v))
+    mat2 = (b + h) / 2
+    mat3 = (mat2 + mat2.T) / 2
+    if is_pd(mat3):
+        return mat3
 
-    H = np.dot(V.T, np.dot(np.diag(s), V))
-
-    A2 = (B + H) / 2
-
-    A3 = (A2 + A2.T) / 2
-
-    if is_pd(A3):
-        return A3
-
-    spacing = np.spacing(np.linalg.norm(A))
-    I = np.eye(A.shape[0])
+    spacing = np.spacing(np.linalg.norm(mat))
     k = 1
-    while not is_pd(A3):
-        mineig = np.min(np.real(np.linalg.eigvals(A3)))
-        A3 += I * (-mineig * k**2 + spacing)
+    while not is_pd(mat3):
+        mineig = np.min(np.real(np.linalg.eigvals(mat3)))
+        mat3 += np.eye(mat.shape[0]) * (-mineig * k**2 + spacing)
         k += 1
 
-    return A3
+    return mat3
 
 
-def is_pd(B):
+def is_pd(mat):
     """
     Returns true when input is positive-definite, via Cholesky
     source: https://stackoverflow.com/questions/43238173/python-convert-matrix-to-positive-semi-definite
     """
     try:
-        _ = np.linalg.cholesky(B)
+        _ = np.linalg.cholesky(mat)
         return True
     except np.linalg.LinAlgError:
         return False
