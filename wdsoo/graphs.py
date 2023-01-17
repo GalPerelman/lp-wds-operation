@@ -9,7 +9,11 @@ from matplotlib.ticker import FormatStrFormatter
 from matplotlib import ticker as mtick
 from matplotlib.lines import Line2D
 import matplotlib.patheffects as PathEffects
-import pylustrator
+
+
+class Colors:
+    BlwtRd = ["#023047", "#126782", "#219ebc", "#ffffff", "#DC7F2E", "#CE6550", "#AF4831"]
+    WhtBlRd = ["#ffffff", "#8ecae6", "#046B9F", "#fdf4b0", "#ffbf1f", "#b33005"]
 
 
 class SimGraphs:
@@ -281,21 +285,14 @@ class SimGraphs:
         return ax
 
 
-def correlation_matrix(mat, names=False, norm=False):
+def correlation_matrix(mat, norm=False, hex_colors=Colors.WhtBlRd):
     if norm:
         mat = (mat - mat.min()) / (mat.max() - mat.min())
 
-    hex_list = ["023047", "126782", "219ebc", "ffffff", "DC7F2E", "CE6550", "AF4831"]
-    hex_list = ["ffffff","8ecae6","046B9F","fdf4b0","ffbf1f","b33005"]
-    hex_list = ["#" + _ for _ in hex_list]
-    cmap = get_continuous_cmap(hex_list)
-
-    fig, ax = plt.subplots()
+    cmap = get_continuous_cmap(hex_colors)
     mat_norm = max(abs(mat.min()), abs(mat.max()))
     im = plt.imshow(mat, cmap=cmap, vmin=0, vmax=mat_norm)
-    # plt.cm.RdBu_r
     ax = plt.gca()
-
 
     ax.tick_params(which='minor', bottom=False, left=False)
     cbar = plt.colorbar(im, ticks=mtick.AutoLocator())
@@ -310,30 +307,18 @@ def correlation_matrix(mat, names=False, norm=False):
     ax.grid(which='major', color='k', linestyle='-', linewidth=1)
     ax.grid(which='minor', color='k', linestyle='-', linewidth=0.5, alpha=0.4)
 
-    if names:
-        ax.set_xticks(np.arange(-0.5, mat.shape[0], 1), minor=True)
-        ax.set_yticks(np.arange(-0.5, mat.shape[0], 1), minor=True)
-
-        for i, name in enumerate(names):
-            fig.text(0.098 + 0.115 * (i + 1), 0.04, name, ha='center')
-            fig.text(0.06, 0.06 + 0.155 * (i + 1), names[-(i + 1)], va='center', rotation='vertical')
-            # fig.text(0.3 + 0.12 * (i + 1), 0.04, name, ha='center')
-            # fig.text(0.06, 0.3 + 0.12 * (i + 1), names[-(i + 1)], va='center', rotation='vertical')
-    else:
-        ax.set_xticks(np.arange(-0.5, mat.shape[0], 1), minor=True)
-        ax.set_yticks(np.arange(-0.5, mat.shape[0], 1), minor=True)
-        ax.set_xlabel('Time (Hr)')
-        ax.set_ylabel('Time (Hr)')
-
+    ax.set_xticks(np.arange(-0.5, mat.shape[0], 1), minor=True)
+    ax.set_yticks(np.arange(-0.5, mat.shape[0], 1), minor=True)
     plt.subplots_adjust(top=0.9, bottom=0.13, left=0.055, right=0.9, hspace=0.2, wspace=0.2)
     plt.show()
 
 
 def hex_to_rgb(value):
-    '''
+    """
     Converts hex to rgb colours
     value: string of 6 characters representing a hex colour.
-    Returns: list length 3 of RGB values'''
+    Returns: list length 3 of RGB values
+    """
     value = value.strip("#")  # removes hash symbol if present
     lv = len(value)
     return tuple(int(value[i:i + lv // 3], 16) for i in range(0, lv, lv // 3))
