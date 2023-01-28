@@ -52,36 +52,6 @@ def get_combs_for_unit(combs, unit_id):
     return combs[combs['unit ' + str(unit_id)] == 'ON']
 
 
-def patterns_to_dem(t1, t2, year_dem, path):
-    time_range = pd.date_range(start=t1, end=t2, freq='60min')
-
-    month = pd.read_csv(path + '/Month-Year.csv', encoding='windows-1255')
-    month.columns = ['month', 'rate', 'cumulative']
-    month['month'] = [i + 1 for i in range(12)]
-    month.set_index('month', inplace=True)
-
-    week = pd.read_csv(path + '/Day-Week.csv', encoding='windows-1255')
-    week.columns = ['weekday', 'rate', 'cumulative']
-    week['weekday'] = [i + 1 for i in range(7)]
-    week.set_index('weekday', inplace=True)
-
-    hr = pd.read_csv(path + '/Hr-Day.csv', encoding='windows-1255')
-
-    hr.columns = ['hr'] + [i + 1 for i in range(7)]
-    hr.set_index('hr', inplace=True)
-
-    df = pd.DataFrame(index=time_range)
-    df['month'] = pd.DatetimeIndex(df.index).month
-    df['weekday'] = (pd.DatetimeIndex(df.index).weekday + 1) % 7 + 1
-    df['hr'] = pd.DatetimeIndex(df.index).hour
-
-    df['demand'] = df.apply(lambda x: year_dem * (month.loc[x['month'], 'rate'] / 100)
-                                      * (week.loc[x['weekday'], 'rate'] / 100)
-                                      * (hr.loc[x['hr'], x['weekday']]), axis=1)
-
-    return df['demand']
-
-
 def vectorized_tariff(data_folder, date_range):
     read_tariffs(data_folder)
     df = pd.DataFrame(index=date_range)
@@ -100,11 +70,11 @@ def vectorized_tariff(data_folder, date_range):
     df.loc[df.index.to_series().dt.date.astype(str).isin(holidays_evenings_list), 'weekday'] = 6
     df.loc[df.index.to_series().dt.date.astype(str).isin(holidays_list), 'weekday'] = 7
 
-    Tariffs = Electricity.all_periods
-    Tariffs = Tariffs.stack().reorder_levels([0, 2, 1])
-    Tariffs = Tariffs.rename('Tariff')
-    Tariffs.index = [Tariffs.index.get_level_values(0), Tariffs.index.get_level_values(1).astype(int),
-                     Tariffs.index.get_level_values(2).astype(int)]
+    tariffs = Electricity.all_periods
+    tariffs = tariffs.stack().reorder_levels([0, 2, 1])
+    tariffs = tariffs.rename('Tariff')
+    tariffs.index = [tariffs.index.get_level_values(0), tariffs.index.get_level_values(1).astype(int),
+                     tariffs.index.get_level_values(2).astype(int)]
 
     costs = Electricity.all_rates
     costs = costs.stack().reorder_levels([0, 2, 1])
@@ -113,7 +83,7 @@ def vectorized_tariff(data_folder, date_range):
     costs = costs.pivot_table(values='costs', index=['season', 'name'], columns='voltage',
                               aggfunc='first').reset_index()
 
-    df = pd.merge(df, Tariffs, how='inner', left_on=['season', 'weekday', 'hr'], right_index=True)
+    df = pd.merge(df, tariffs, how='inner', left_on=['season', 'weekday', 'hr'], right_index=True)
     df = df.sort_index()
 
     df = pd.merge(df.reset_index(), costs, how='inner', left_on=['season', 'Tariff'], right_on=['season', 'name'])
