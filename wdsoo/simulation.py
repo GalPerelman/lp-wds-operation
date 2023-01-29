@@ -3,7 +3,6 @@ import pandas as pd
 import numpy as np
 import datetime
 import time
-import yaml
 
 # local imports
 from . import demands
@@ -31,6 +30,7 @@ class Simulation:
         self.num_steps = self.get_num_steps()
         self.tariff_epsilon = 0.0002
         self.network = network
+        self.vars = pd.DataFrame()
 
         self.date_tariff = utils.vectorized_tariff(self.data_folder, self.time_range)
         self.date_tariff = utils.split_range(self.date_tariff, self.hr_step_size)
@@ -97,53 +97,83 @@ class Simulation:
 
     def build(self):
         for s_name, s in self.network.pump_stations.items():
-            s.vars = pd.concat([s.combs] * len(self.time_range))
+            temp = pd.concat([s.combs] * len(self.time_range))
             tariff_vector = np.repeat(self.date_tariff[s.voltage_type], len(s.combs)).values
-            idx = pd.MultiIndex.from_arrays([np.repeat(self.time_range, len(s.combs)), s.vars.index])
-            s.vars.set_index(idx, inplace=True)
-            s.vars.index.set_names(['time', 'comb'], inplace=True)
-            s.vars.loc[:, 'tariff'] = tariff_vector
+            idx = pd.MultiIndex.from_arrays([np.repeat(self.time_range, len(s.combs)), temp.index])
+            temp.set_index(idx, inplace=True)
+            temp.index.set_names(['time', 'comb'], inplace=True)
+            temp.loc[:, 'tariff'] = tariff_vector
 
-            step_size = (s.vars.index.get_level_values(0).drop_duplicates().to_series().diff()).shift(-1).rename('dt')
-            step_size[-1] = self.t2 - s.vars.index.get_level_values(0).max()
+            step_size = (temp.index.get_level_values(0).drop_duplicates().to_series().diff()).shift(-1).rename('dt')
+            step_size[-1] = self.t2 - temp.index.get_level_values(0).max()
             step_size = step_size / np.timedelta64(1, 'h')
-            s.vars = pd.merge(s.vars, step_size, left_index=True, right_index=True)
-            s.vars = utils.separate_consecutive_tariffs(s.vars)
-            s.vars['eps'] *= self.tariff_epsilon
-            s.vars['cost'] = s.vars['flow'] * s.vars['se'] * s.vars['tariff'] * (1 + s.vars['eps'])
+            temp = pd.merge(temp, step_size, left_index=True, right_index=True)
+            temp = utils.separate_consecutive_tariffs(temp)
+            temp['eps'] *= self.tariff_epsilon
+            temp['cost'] = temp['flow'] * temp['se'] * temp['tariff'] * (1 + temp['eps'])
+
+            temp.loc[:, 'network_element'] = s
+            temp.loc[:, 'name'] = s_name
+            temp.loc[:, 'element_type'] = 'station'
+            self.vars = pd.concat([self.vars, temp])
+            s.vars = temp
 
         for vsp_name, vsp in self.network.vsp.items():
-            vsp.vars = pd.DataFrame(index=self.time_range)
-            vsp.vars.index.set_names('time', inplace=True)
-            vsp.vars['tariff'] = self.date_tariff[vsp.voltage_type]
-            vsp.vars['cost'] = vsp.power * vsp.vars['tariff']
+            temp = pd.DataFrame(index=self.time_range)
+            temp.index.set_names('time', inplace=True)
+            temp['tariff'] = self.date_tariff[vsp.voltage_type]
+            temp['cost'] = vsp.power * temp['tariff']
+
+            temp.loc[:, 'network_element'] = vsp
+            temp.loc[:, 'name'] = vsp_name
+            temp.loc[:, 'element_type'] = 'vsp'
+            self.vars = pd.concat([self.vars, temp])
+            vsp.vars = temp
 
         for w_name, w in self.network.wells.items():
-            w.vars = pd.concat([w.combs] * len(self.time_range))
+            temp = pd.concat([w.combs] * len(self.time_range))
             tariff_vector = np.repeat(self.date_tariff[w.voltage_type], len(w.combs)).values
-            idx = pd.MultiIndex.from_arrays([np.repeat(self.time_range, len(w.combs)), w.vars.index])
-            w.vars.set_index(idx, inplace=True)
-            w.vars.index.set_names(['time', 'comb'], inplace=True)
+            idx = pd.MultiIndex.from_arrays([np.repeat(self.time_range, len(w.combs)), temp.index])
+            temp.set_index(idx, inplace=True)
+            temp.index.set_names(['time', 'comb'], inplace=True)
 
-            w.vars.loc[:, 'tariff'] = tariff_vector
-            step_size = (w.vars.index.get_level_values(0).drop_duplicates().to_series().diff())
+            temp.loc[:, 'tariff'] = tariff_vector
+            step_size = (temp.index.get_level_values(0).drop_duplicates().to_series().diff())
             step_size = step_size.shift(-1).rename('step_size')
-            step_size[-1] = self.t2 - w.vars.index.get_level_values(0).max()
+            step_size[-1] = self.t2 - temp.index.get_level_values(0).max()
             step_size = step_size / np.timedelta64(1, 'h')
-            w.vars = pd.merge(w.vars, step_size, left_index=True, right_index=True)
-            w.vars['cost'] = w.vars['flow'] * w.vars['se'] * w.vars['tariff']
+            temp = pd.merge(temp, step_size, left_index=True, right_index=True)
+            temp['cost'] = temp['flow'] * temp['se'] * temp['tariff']
+
+            temp.loc[:, 'network_element'] = w
+            temp.loc[:, 'name'] = w_name
+            temp.loc[:, 'element_type'] = 'well'
+            self.vars = pd.concat([self.vars, temp])
+            w.vars = temp
 
         for cv_name, cv in self.network.control_valves.items():
-            cv.vars = pd.concat([cv.combs] * len(self.time_range))
-            idx = pd.MultiIndex.from_arrays([np.repeat(self.time_range, len(cv.combs)), cv.vars.index])
-            cv.vars.set_index(idx, inplace=True)
-            cv.vars.index.set_names(['time', 'comb'], inplace=True)
-            cv.vars['cost'] = 0
+            temp = pd.concat([cv.combs] * len(self.time_range))
+            idx = pd.MultiIndex.from_arrays([np.repeat(self.time_range, len(cv.combs)), temp.index])
+            temp.set_index(idx, inplace=True)
+            temp.index.set_names(['time', 'comb'], inplace=True)
+            temp['cost'] = 0
+
+            temp.loc[:, 'network_element'] = cv
+            temp.loc[:, 'name'] = cv_name
+            temp.loc[:, 'element_type'] = 'cv'
+            self.vars = pd.concat([self.vars, temp])
+            cv.vars = temp
 
         for v_name, v in self.network.valves.items():
-            v.vars = pd.DataFrame(index=self.time_range)
-            v.vars.index.set_names('time', inplace=True)
-            v.vars['cost'] = 0
+            temp = pd.DataFrame(index=self.time_range)
+            temp.index.set_names('time', inplace=True)
+            temp['cost'] = 0
+
+            temp.loc[:, 'network_element'] = v
+            temp.loc[:, 'name'] = v_name
+            temp.loc[:, 'element_type'] = 'valve'
+            self.vars = pd.concat([self.vars, temp])
+            v.vars = temp
 
         for t_name, t in self.network.tanks.items():
             t.vars = pd.DataFrame(index=self.time_range)
@@ -159,6 +189,8 @@ class Simulation:
 
             if t.vars['demand'].all():
                 self.demand_tanks[t_name] = t
+
+        self.vars.reset_index(inplace=True, drop=True)
 
     def lp_formulate(self):
         self.lp_model = opt.LP(self)
