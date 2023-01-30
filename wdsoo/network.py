@@ -22,7 +22,10 @@ class Network:
         self.comb_elements = {**self.pump_stations, **self.wells, **self.control_valves}
         self.flow_elements = {**self.pump_stations, **self.wells, **self.control_valves, **self.valves, **self.vsp}
         self.cost_elements = {**self.pump_stations, **self.wells, **self.vsp}
-        self.all = {**self.pump_stations, **self.wells, **self.control_valves, **self.valves, **self.vsp, **self.tanks}
+
+    def __getitem__(self, item):
+        elements = {**self.pump_stations, **self.wells, **self.control_valves, **self.valves, **self.vsp, **self.tanks}
+        return elements[item]
 
     def declare_stations(self):
         df = pd.read_csv(os.path.join(self.data_folder, 'stations.csv'))
