@@ -4,7 +4,7 @@ import numpy as np
 import pandas as pd
 from typing import Union
 
-from . import graphs
+from . import utils
 
 
 class Ufile:
@@ -73,7 +73,6 @@ class UCategory:
                     r = self.corr_mat[i, j]
                     np.fill_diagonal(mat[i*t: i*t+t, j*t: j*t+t], np.multiply(ei.std, ej.std) * r)
 
-        w, v = np.linalg.eigh(mat)
         if not is_pd(mat):
             print(f'Warning: {self.name} COV matrix not positive defined')
             mat = nearest_positive_defined(mat)
@@ -81,19 +80,36 @@ class UCategory:
 
 
 class UElement:
-    def __init__(self, ucat, name, idx, element_type, std, corr):
+    def __init__(self, ucat, name, idx, element_type, std, corr, duration):
         self.ucat = ucat
         self.name = name
         self.idx = idx
         self.element_type = element_type
         self.std = std
-        self.corr = corr
+        self.corr = corr  # this is temporal correlation across time steps
+        self.duration = duration  # controls the shape of std and corr to match the simulation
 
         if self.std is not None:
+            if len(self.std) >= self.duration:
+                self.std = self.std[:self.duration]
+            else:
+                self.std = utils.lengthen_to_n(self.std, duration)
             self.time_corr = self.get_time_corr()
             self.cov = build_cov_from_std(self.std, self.time_corr)
 
+    def adjust_std_dimensions(self):
+        """
+        Adjust the std data in uncertainty config file to simualtion duration
+        A period is the length of the values in config file (for example 34 values for daily period)
+        If simulation shorter than a single period -
+
+        :return:
+        """
+
     def get_time_corr(self):
+        """
+        to do: include option for input temporal correlation as matrix
+        """
         r = np.zeros((len(self.std), len(self.std)))
         for i in range(len(self.std)):
             for j in range(len(self.std) - i):
@@ -107,10 +123,13 @@ class UElement:
 
                 r[i, i + j] = rr
                 r[j + i, i] = rr
+
         return r
 
 
-def init_uncertainty(udata_path: str):
+def init_uncertainty(sim):
+    udata_path = os.path.join(sim.data_folder, "uncertainty", "conf.json")
+    duration = sim.num_steps
     ucategories = {}
     with open(os.path.join(udata_path)) as f:
         udata = json.load(f)
@@ -119,7 +138,7 @@ def init_uncertainty(udata_path: str):
             cat_elements = {}
             for idx, (e_name, e_data) in enumerate(ucat_data['elements'].items()):
                 if e_data['std'] is not None:
-                    ue = UElement(ucat, e_name, idx, **e_data)
+                    ue = UElement(ucat, e_name, idx, **e_data, duration=duration)
                     cat_elements[e_name] = ue
 
             if len(cat_elements) > 0:
