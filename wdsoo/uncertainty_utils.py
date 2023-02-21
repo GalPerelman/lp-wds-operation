@@ -70,6 +70,8 @@ class UCategory:
                 if j == i:
                     continue
                 else:
+                    # correlation between elements - only at same time steps
+                    # e1,t1 with e2,t1 but not e1,t1 with e2,t2
                     r = self.corr_mat[i, j]
                     np.fill_diagonal(mat[i*t: i*t+t, j*t: j*t+t], np.multiply(ei.std, ej.std) * r)
 
@@ -108,12 +110,13 @@ class UElement:
 
     def get_time_corr(self):
         """
-        to do: include option for input temporal correlation as matrix
+        to do:
+            include option for input temporal correlation as matrix
+            separate to different functions to allow different temporal correlations
         """
         r = np.zeros((len(self.std), len(self.std)))
         for i in range(len(self.std)):
             for j in range(len(self.std) - i):
-
                 if self.corr == 0:
                     rr = 0
                 else:
@@ -124,6 +127,7 @@ class UElement:
                 r[i, i + j] = rr
                 r[j + i, i] = rr
 
+        np.fill_diagonal(r, 1)
         return r
 
 
