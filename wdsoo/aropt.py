@@ -22,7 +22,7 @@ class ARO:
         self.robustness = robustness
         self.uset_type = uset_type
 
-        self.udata = uutils.init_uncertainty(os.path.join(self.sim.data_folder, 'uncertainty', 'conf.json'))
+        self.udata = uutils.init_uncertainty(self.sim)
         self.utanks = list(self.udata['demand'].elements.keys())
         self.nominal_demands = self.get_nominal_demands()
 

@@ -63,16 +63,6 @@ class Simulation:
         temp.index = temp['time']
         return temp
 
-    def match_to_sim_timeindex(self, df):
-        df.index = self.get_time_range()
-        temp = pd.DataFrame(index=self.date_tariff.index)
-        temp['group'] = range(len(temp))
-        df = pd.merge(temp, df, left_index=True, right_index=True, how='right').ffill()
-        df = df.groupby('group').sum()
-        df.index = temp.index
-        (df)
-        return df
-
     def get_num_steps(self):
         return len(self.time_range)
 
@@ -186,7 +176,7 @@ class Simulation:
             t.vars = pd.DataFrame(index=self.time_range)
             t.vars['cost'] = 0
             demands_file = os.path.join(self.data_folder, 'Demands', 'demands.' + str(int(t.zone)))
-            tank_demands = self.match_to_sim_timeindex(demands.load_from_csv(demands_file, self.t1, self.t2))
+            tank_demands = demands.load_from_csv(demands_file, self.t1, self.t2)
             t.vars['demand'] = tank_demands
             t.vars = demands.demand_factorize(t.zone, t.vars, self.data_folder)
             if self.dynamic_min_vol:
