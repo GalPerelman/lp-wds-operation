@@ -27,6 +27,10 @@ class Network:
         elements = {**self.pump_stations, **self.wells, **self.control_valves, **self.valves, **self.vsp, **self.tanks}
         return elements[item]
 
+    @property
+    def num_tanks(self):
+        return len(self.tanks)
+
     def declare_stations(self):
         df = pd.read_csv(os.path.join(self.data_folder, 'stations.csv'))
         for index, row in df.iterrows():
@@ -80,10 +84,10 @@ class Network:
 
     def set_tanks_links(self):
         for t_name, t in self.tanks.items():
-            t.inflows = [s for s in self.pump_stations.values() if s.to_zone_id == t.zone] \
-                        + [w for w in self.wells.values() if w.to_zone_id == t.zone]
+            t.pumps_inflows = [s for s in self.pump_stations.values() if s.to_zone_id == t.zone]
+            t.wells_inflows = [w for w in self.wells.values() if w.to_zone_id == t.zone]
 
-            t.outflows = [s for s in self.pump_stations.values() if s.from_zone_id == t.zone]
+            t.pumps_outflows = [s for s in self.pump_stations.values() if s.from_zone_id == t.zone]
 
             t.vsp_inflows = [vsp for vsp in self.vsp.values() if vsp.to_zone_id == t.zone]
             t.vsp_outflows = [vsp for vsp in self.vsp.values() if vsp.from_zone_id == t.zone]
@@ -93,6 +97,9 @@ class Network:
 
             t.v_inflows = [v for v in self.valves.values() if v.to_zone_id == t.zone]
             t.v_outflows = [v for v in self.valves.values() if v.from_zone_id == t.zone]
+
+            t.inflows = t.pumps_inflows + t.wells_inflows + t.vsp_inflows + t.cv_inflows + t.v_inflows
+            t.outflows = t.pumps_outflows + t.vsp_outflows + t.cv_outflows + t.v_outflows
 
     def set_power_stations(self):
         for ps_name, ps in self.power_stations.items():
@@ -199,14 +206,17 @@ class Tank:
         self.final_level = self.get_final_level(final_level)
         self.final_vol = self.level_to_vol(self.final_level)
 
-        self.inflows = None
-        self.outflows = None
+        self.pumps_inflows = None
+        self.pumps_outflows = None
+        self.wells_inflows = None
         self.cv_inflows = None
         self.cv_outflows = None
         self.v_inflows = None
         self.v_outflows = None
         self.vsp_inflows = None
-        self.vsp_outflows = None        
+        self.vsp_outflows = None
+        self.inflows = None
+        self.outflows = None
 
     def get_final_level(self, x):
         if np.isnan(x):

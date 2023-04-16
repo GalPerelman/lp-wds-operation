@@ -16,6 +16,7 @@ pd.set_option('display.width', 1000)
 pd.set_option('display.float_format', lambda x: '%.3f' % x)
 pd.options.mode.chained_assignment = 'raise'
 
+
 class Simulation:
     def __init__(self, data_folder, network, start_time, end_time, hr_step_size=1, dynamic_min_vol=False):
         self.start_time = time.time()
@@ -80,7 +81,7 @@ class Simulation:
         return df
 
     def get_dynamic_min_vol(self, tank):
-        qmax = sum([x.combs['flow'].max() for x in tank.inflows]) + sum([x.max_flow for x in tank.vsp_inflows])
+        qmax = sum([x.combs['flow'].max() for x in tank.pumps_inflows]) + sum([x.max_flow for x in tank.vsp_inflows])
         tank.vars['qmax'] = qmax
         tank.vars['v'] = tank.final_vol - tank.vars['demand'] - qmax
 
@@ -112,8 +113,9 @@ class Simulation:
             temp.loc[:, 'network_element'] = s
             temp.loc[:, 'name'] = s_name
             temp.loc[:, 'element_type'] = 'station'
-            self.vars = pd.concat([self.vars, temp])
             s.vars = temp
+
+            self.vars = pd.concat([self.vars, temp])
 
         for vsp_name, vsp in self.network.vsp.items():
             temp = pd.DataFrame(index=self.time_range)
@@ -124,8 +126,8 @@ class Simulation:
             temp.loc[:, 'network_element'] = vsp
             temp.loc[:, 'name'] = vsp_name
             temp.loc[:, 'element_type'] = 'vsp'
-            self.vars = pd.concat([self.vars, temp])
             vsp.vars = temp
+            self.vars = pd.concat([self.vars, temp])
 
         for w_name, w in self.network.wells.items():
             temp = pd.concat([w.combs] * len(self.time_range))
@@ -136,7 +138,7 @@ class Simulation:
 
             temp.loc[:, 'tariff'] = tariff_vector
             step_size = (temp.index.get_level_values(0).drop_duplicates().to_series().diff())
-            step_size = step_size.shift(-1).rename('step_size')
+            step_size = step_size.shift(-1).rename('dt')
             step_size[-1] = self.t2 - temp.index.get_level_values(0).max()
             step_size = step_size / np.timedelta64(1, 'h')
             temp = pd.merge(temp, step_size, left_index=True, right_index=True)
@@ -145,8 +147,8 @@ class Simulation:
             temp.loc[:, 'network_element'] = w
             temp.loc[:, 'name'] = w_name
             temp.loc[:, 'element_type'] = 'well'
-            self.vars = pd.concat([self.vars, temp])
             w.vars = temp
+            self.vars = pd.concat([self.vars, temp])
 
         for cv_name, cv in self.network.control_valves.items():
             temp = pd.concat([cv.combs] * len(self.time_range))
@@ -158,8 +160,8 @@ class Simulation:
             temp.loc[:, 'network_element'] = cv
             temp.loc[:, 'name'] = cv_name
             temp.loc[:, 'element_type'] = 'cv'
-            self.vars = pd.concat([self.vars, temp])
             cv.vars = temp
+            self.vars = pd.concat([self.vars, temp])
 
         for v_name, v in self.network.valves.items():
             temp = pd.DataFrame(index=self.time_range)
@@ -169,15 +171,15 @@ class Simulation:
             temp.loc[:, 'network_element'] = v
             temp.loc[:, 'name'] = v_name
             temp.loc[:, 'element_type'] = 'valve'
-            self.vars = pd.concat([self.vars, temp])
             v.vars = temp
+            self.vars = pd.concat([self.vars, temp])
 
         for t_name, t in self.network.tanks.items():
             t.vars = pd.DataFrame(index=self.time_range)
             t.vars['cost'] = 0
             demands_file = os.path.join(self.data_folder, 'Demands', 'demands.' + str(int(t.zone)))
             tank_demands = demands.load_from_csv(demands_file, self.t1, self.t2)
-            t.vars['demand'] = tank_demands
+            t.vars['demand'] = tank_demands.values
             t.vars = demands.demand_factorize(t.zone, t.vars, self.data_folder)
             if self.dynamic_min_vol:
                 self.get_dynamic_min_vol(t)
@@ -188,7 +190,7 @@ class Simulation:
             if t.vars['demand'].all():
                 self.demand_tanks[t_name] = t
 
-        self.vars.reset_index(inplace=True, drop=True)
+        self.vars.reset_index(inplace=True)
 
     def lp_formulate(self):
         self.lp_model = opt.LP(self)
