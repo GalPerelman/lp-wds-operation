@@ -1,7 +1,7 @@
-import os
 import pandas as pd
 import numpy as np
 import operator
+import time
 
 from rsome import ro
 import rsome as rso
@@ -22,7 +22,7 @@ class RO:
         self.robustness = robustness
         self.uset_type = uset_type
 
-        self.udata = uutils.init_uncertainty(os.path.join(self.sim.data_folder, 'uncertainty', 'uncertainty.json'))
+        self.udata = uutils.init_uncertainty(self.sim)
 
         self.model = ro.Model()
         self.x = self.declare_variables()
@@ -158,7 +158,7 @@ class RO:
 
     def mass_balance_lhs(self, tank, t):
         lhs = tank.initial_vol
-        for s in tank.inflows:
+        for s in tank.pumps_inflows:
             temp_matrix = self.comb_matrix(s, 'in', 'flow')[:t + 1, :(t + 1) * len(s.combs)]
             x = self.vars_df.loc[self.vars_df['name'] == s.name, 'var'].values[0]
             lhs = lhs + (temp_matrix * x[:(t + 1) * len(s.combs)]).sum()
@@ -167,7 +167,7 @@ class RO:
             x = self.vars_df.loc[self.vars_df['name'] == vsp.name, 'var'].values[0]
             lhs = lhs + (temp_matrix * x[:t + 1]).sum()
 
-        for s in tank.outflows:
+        for s in tank.pumps_outflows:
             temp_matrix = self.comb_matrix(s, 'out', 'flow')[:t + 1, :(t + 1) * len(s.combs)]
             x = self.vars_df.loc[self.vars_df['name'] == s.name, 'var'].values[0]
             lhs = lhs + (temp_matrix * x[:(t + 1) * len(s.combs)]).sum()
@@ -204,9 +204,9 @@ class RO:
                 element = self.sim.network.flow_elements[element_name]
                 xmin_idx, xmax_idx = self.get_x_idx(element_name)
 
-                if element in tank.inflows + tank.vsp_inflows + tank.v_inflows + tank.cv_inflows:
+                if element in tank.pumps_inflows + tank.vsp_inflows + tank.v_inflows + tank.cv_inflows:
                     flow_direction = 'in'
-                elif element in tank.outflows + tank.vsp_outflows + tank.v_outflows + tank.cv_outflows:
+                elif element in tank.pumps_outflows + tank.vsp_outflows + tank.v_outflows + tank.cv_outflows:
                     flow_direction = 'out'
                 else:
                     continue
@@ -353,7 +353,8 @@ class RO:
         obj, x, status = self.model.solution.objval, self.model.solution.x, self.model.solution.status
         status = GRB_STATUS[status]
         self.get_results()
-        return obj, x, status
+        self.get_results()
+        return status, obj, time.time() - self.sim.start_time
 
     def get_results(self):
         res = self.x.get()
@@ -366,7 +367,7 @@ class RO:
     def tanks_balance(self):
         for t_name, t in self.sim.network.tanks.items():
             df = pd.DataFrame(index=self.sim.time_range, data={'df': 0})
-            for x in t.inflows + t.cv_inflows:
+            for x in t.pumps_inflows + t.cv_inflows:
                 qin = x.vars['flow'] * x.vars['value']
                 qin = qin.groupby(level='time').sum()
                 df = pd.merge(df, qin.rename(x.name), left_index=True, right_index=True)
@@ -375,7 +376,7 @@ class RO:
                 qin = x.vars['value']
                 df = pd.merge(df, qin.rename(x.name), left_index=True, right_index=True)
 
-            for x in t.outflows + t.cv_outflows:
+            for x in t.pumps_outflows + t.cv_outflows:
                 qout = x.vars['flow'] * x.vars['value']
                 qout = -1 * qout.groupby(level='time').sum()
                 df = pd.merge(df, qout.rename(x.name), left_index=True, right_index=True)
