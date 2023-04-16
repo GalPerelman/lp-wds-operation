@@ -47,7 +47,7 @@ class SimGraphs:
         return ax
 
     def tank(self, tank, ax=None, linestyle='solid', level=False, color='k', ylabel=False, label=False,
-             background=True):
+             background=True, min_vol=True, demand=False):
         if ax is None:
             fig, ax = plt.subplots()
 
@@ -66,12 +66,14 @@ class SimGraphs:
 
         if not label:
             label = tank.name
+
         ax.plot(x0, y0, 'r', marker='o', markersize=4)
         ax.plot(x, y, marker='o', color=color, markersize=4, markerfacecolor='none', linestyle=linestyle, label=label)
-
-        # ax.plot(tank.vars.index, tank.vars['demand'], marker='o', markersize=4, markerfacecolor='none')
-        # ax.plot(x, tank.vars['min_vol'].to_list() + [tank.final_vol], linewidth=1, c='k')
-        ax.grid()
+        if min_vol:
+            ax.plot(x, [tank.min_vol[0]] + tank.min_vol.tolist(), linewidth=1, c='k')
+        if demand:
+            ax.plot(tank.vars.index, tank.vars['demand'], marker='o', markersize=4, markerfacecolor='none')
+        
         if ylabel:
             ax.set_ylabel(ylabel)
 
@@ -94,6 +96,7 @@ class SimGraphs:
             leg.set_title('Electricity tariff', prop={'size': font_size})
             leg._legend_box.align = "left"
 
+        ax.grid()
         return ax
 
     def all_tanks(self, level=False, sharey=False):
@@ -121,8 +124,8 @@ class SimGraphs:
         elif facility_type in ['VSP', 'Valve']:
             df['result_flow'] = df['value']
 
-        df = df.groupby(level='time').sum()
-
+        df = df[['result_flow']].groupby(level='time').sum()
+        df = df.round(3)
         if self.x_ticks == 'hours':
             df.index = range(len(df))
 
@@ -136,8 +139,8 @@ class SimGraphs:
         ax.grid()
         return ax
 
-    def facilities_flow(self, facilities):
-        fig, axes = plt.subplots(nrows=2, ncols=math.ceil(len(facilities) / 2),
+    def facilities_flow(self, facilities, nrows=2):
+        fig, axes = plt.subplots(nrows=nrows, ncols=math.ceil(len(facilities) / nrows),
                                  sharex=True, figsize=(12, 6))
         axes = axes.ravel()
         for i, (f_name, f) in enumerate(facilities.items()):
@@ -205,12 +208,12 @@ class SimGraphs:
         if ax is None:
             fig, ax = plt.subplots()
 
-        for x in tank.inflows:
+        for x in tank.pumps_inflows:
             ax = self.facility_flow(x, ax)
         for x in tank.v_inflows:
             ax = self.valve_flow(x, ax)
 
-        for x in tank.outflows:
+        for x in tank.pumps_outflows:
             ax = self.facility_flow(x, ax)
         for x in tank.v_outflows:
             ax = self.valve_flow(x, ax)
@@ -285,7 +288,7 @@ class SimGraphs:
         return ax
 
 
-def correlation_matrix(mat, norm=False, hex_colors=Colors.WhtBlRd):
+def correlation_matrix(mat, major_ticks=False, norm=False, hex_colors=Colors.WhtBlRd):
     if norm:
         mat = (mat - mat.min()) / (mat.max() - mat.min())
 
@@ -298,19 +301,19 @@ def correlation_matrix(mat, norm=False, hex_colors=Colors.WhtBlRd):
     cbar = plt.colorbar(im, ticks=mtick.AutoLocator())
 
     # Major ticks
-    ax.set_xticks(np.arange(-0.5, mat.shape[0], 24))
-    ax.set_yticks(np.arange(-0.5, mat.shape[0], 24))
-    ax.set_xticklabels(np.arange(0, mat.shape[0] + 24, 24))
-    ax.set_yticklabels(np.arange(0, mat.shape[0] + 24, 24))
+    if major_ticks:
+        ax.set_xticks(np.arange(-0.5, mat.shape[0], major_ticks))
+        ax.set_yticks(np.arange(-0.5, mat.shape[0], major_ticks))
+        ax.set_xticklabels(np.arange(0, mat.shape[0] + major_ticks, major_ticks))
+        ax.set_yticklabels(np.arange(0, mat.shape[0] + major_ticks, major_ticks))
+        ax.grid(which='major', color='k', linestyle='-', linewidth=1)
 
-    # Gridlines based on minor ticks
-    ax.grid(which='major', color='k', linestyle='-', linewidth=1)
+    # Grid lines based on minor ticks
     ax.grid(which='minor', color='k', linestyle='-', linewidth=0.5, alpha=0.4)
-
     ax.set_xticks(np.arange(-0.5, mat.shape[0], 1), minor=True)
     ax.set_yticks(np.arange(-0.5, mat.shape[0], 1), minor=True)
+
     plt.subplots_adjust(top=0.9, bottom=0.13, left=0.055, right=0.9, hspace=0.2, wspace=0.2)
-    plt.show()
 
 
 def hex_to_rgb(value):
